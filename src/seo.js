@@ -1,4 +1,3 @@
-'use strict';
 // Search landing pages (also suitable as paid-ad destinations). Each shows live Florence
 // inventory matching a filter; copy makes no claims beyond what the dealership publishes.
 const LANDING = [
@@ -36,4 +35,4 @@ const LANDING = [
     body: 'Full-size utility ATVs, sport quads and youth four-wheelers on the Florence lot today. Not sure which size fits your rider or your property? Ask Byron — no pressure, just straight answers.' },
 ];
 const bySlug = new Map(LANDING.map((l) => [l.slug, l]));
-module.exports = { LANDING, bySlug };
+export { LANDING, bySlug };

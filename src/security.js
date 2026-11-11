@@ -1,76 +1,82 @@
-'use strict';
-const crypto = require('crypto');
-const config = require('./config');
+// Sign-in, signed tokens and request helpers. Follows Torque CRM's approach: one admin password
+// kept as a Cloudflare secret (ADMIN_PASSWORD); everything signed with HMAC-SHA256 keyed from it.
+import { config } from './config.js';
 
-const hmac = (data) => crypto.createHmac('sha256', config.sessionSecret).update(data).digest('base64url');
-const safeEq = (a, b) => {
-  const A = Buffer.from(String(a)); const B = Buffer.from(String(b));
-  return A.length === B.length && crypto.timingSafeEqual(A, B);
-};
+const enc = new TextEncoder();
+const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-// ---- signed tokens (admin session, form anti-spam token)
-function sign(payload, ttlSeconds) {
-  const body = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + ttlSeconds * 1000 })).toString('base64url');
-  return `${body}.${hmac(body)}`;
+async function hmac(data, purpose = 'token') {
+  // Until a password is set there is nothing to protect and admin sign-in is refused anyway;
+  // public form tokens still need a key, so fall back to a fixed one for that purpose only.
+  const secret = config.adminPassword || 'ridewithbyron-unconfigured';
+  const key = await crypto.subtle.importKey('raw', enc.encode(`ridewithbyron:${purpose}:${secret}`), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64url(await crypto.subtle.sign('HMAC', key, enc.encode(data)));
 }
-function verify(token) {
+
+/** Compare without stopping at the first different character. */
+export function same(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+export async function sign(payload, ttlSeconds, purpose) {
+  const body = b64url(enc.encode(JSON.stringify({ ...payload, exp: Date.now() + ttlSeconds * 1000 })));
+  return `${body}.${await hmac(body, purpose)}`;
+}
+export async function verify(token, purpose) {
   if (typeof token !== 'string' || !token.includes('.')) return null;
   const [body, sig] = token.split('.');
-  if (!safeEq(sig, hmac(body))) return null;
+  if (!same(sig, await hmac(body, purpose))) return null;
   try {
-    const p = JSON.parse(Buffer.from(body, 'base64url').toString());
+    const p = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(body.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))));
     return p.exp > Date.now() ? p : null;
-  } catch (e) { return null; }
+  } catch { return null; }
 }
 
-// ---- passwords (scrypt). Stored format: scrypt$<salt>$<hash>
-function hashPassword(pw) {
-  const salt = crypto.randomBytes(16).toString('base64url');
-  return `scrypt$${salt}$${crypto.scryptSync(pw, salt, 64).toString('base64url')}`;
-}
-function checkPassword(pw, stored) {
-  const [alg, salt, hash] = String(stored || '').split('$');
-  if (alg !== 'scrypt' || !salt || !hash) return false;
-  return safeEq(crypto.scryptSync(String(pw), salt, 64).toString('base64url'), hash);
+export async function passwordOk(password) {
+  if (!config.adminPassword) return false;
+  // Compare signatures so the comparison takes the same time whatever was typed.
+  return same(await hmac(`pw:${password}`, 'login'), await hmac(`pw:${config.adminPassword}`, 'login'));
 }
 
-function parseCookies(req) {
+export function parseCookies(request) {
   const out = {};
-  for (const part of (req.headers.cookie || '').split(';')) {
+  for (const part of (request.headers.get('Cookie') || '').split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0) { try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* skip */ } }
   }
   return out;
 }
 
-// ---- admin session
+// ---- admin session (12 hours). Changing ADMIN_PASSWORD signs every device out.
 const COOKIE = 'rwb_admin';
-function setSession(res) {
-  const csrf = crypto.randomBytes(18).toString('base64url');
-  res.cookie(COOKIE, sign({ a: 1, csrf }, 12 * 3600), { httpOnly: true, sameSite: 'strict', secure: config.isProd, maxAge: 12 * 3600e3, path: '/' });
+const cookieAttrs = () => `Path=/; HttpOnly; SameSite=Strict${config.isProd ? '; Secure' : ''}`;
+export async function sessionCookie() {
+  const csrf = b64url(crypto.getRandomValues(new Uint8Array(18)));
+  return `${COOKIE}=${await sign({ a: 1, csrf }, 12 * 3600, 'session')}; ${cookieAttrs()}; Max-Age=${12 * 3600}`;
 }
-const getSession = (req) => verify(parseCookies(req)[COOKIE]);
-function requireAdmin(req, res, next) {
-  const s = getSession(req);
-  if (!s || !s.a) return res.redirect('/admin/login');
-  req.admin = s;
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    if (!safeEq(req.body && req.body._csrf, s.csrf)) return res.status(403).send('Invalid or missing CSRF token. Go back, reload, and try again.');
-  }
-  res.set('Cache-Control', 'no-store');
-  next();
+export const clearCookie = () => `${COOKIE}=; ${cookieAttrs()}; Max-Age=0`;
+export async function getSession(request) {
+  if (!config.adminPassword) return null;
+  const s = await verify(parseCookies(request)[COOKIE], 'session');
+  return s && s.a ? s : null;
 }
-const clearSession = (res) => res.clearCookie(COOKIE, { path: '/' });
 
 // ---- lead-form token: proves the form was rendered by us and not submitted instantly by a bot
-const formToken = () => sign({ f: 1, t: Date.now() }, 6 * 3600);
-function checkFormToken(token) {
-  const p = verify(token);
+export const formToken = () => sign({ f: 1, t: Date.now() }, 6 * 3600, 'form');
+export async function checkFormToken(token) {
+  const p = await verify(token, 'form');
   if (!p || !p.f) return 'expired';
   if (Date.now() - p.t < 2500) return 'too-fast';
   return null;
 }
 
-const hashIp = (ip) => crypto.createHash('sha256').update(`${config.sessionSecret}|${ip}|${new Date().toISOString().slice(0, 10)}`).digest('hex').slice(0, 16);
-
-module.exports = { sign, verify, hashPassword, checkPassword, parseCookies, setSession, getSession, requireAdmin, clearSession, formToken, checkFormToken, hashIp, hmac, safeEq };
+/** A daily-rotating, non-reversible visitor key (no cookie, no stored IP address). */
+export async function hashIp(ip) {
+  const d = await crypto.subtle.digest('SHA-256', enc.encode(`${config.adminPassword}|${ip}|${new Date().toISOString().slice(0, 10)}`));
+  return b64url(d).slice(0, 16);
+}
+export const clientIp = (request) => request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '0.0.0.0';

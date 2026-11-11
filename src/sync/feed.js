@@ -1,4 +1,3 @@
-'use strict';
 // Authorized-feed adapter (preferred production source once the dealership/DX1 provides one).
 //
 // STATUS: NOT CONNECTED. No feed URL has been issued yet. This adapter is complete and tested
@@ -11,8 +10,8 @@
 //   dealershipId (DealershipId)    must equal the Florence id to be shown
 //   locationName (DealershipName)  must equal "Shoals Outdoor Sports - Florence"
 // A unit missing either field, or where they disagree, is quarantined.
-const config = require('../config');
-const { classifyUnit } = require('./parse');
+import { config } from '../config.js';
+import { classifyUnit } from './gate.js';
 
 const pick = (o, ...keys) => { for (const k of keys) { const hit = Object.keys(o).find((x) => x.toLowerCase() === k.toLowerCase()); if (hit && o[hit] != null && o[hit] !== '') return o[hit]; } return null; };
 const num = (v) => { const n = Number(String(v == null ? '' : v).replace(/[$,]/g, '')); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
@@ -60,10 +59,10 @@ function classifyFeedUnit(unit) {
 }
 
 async function fetchFeed(fetchImpl = fetch) {
-  const url = process.env.INVENTORY_FEED_URL;
+  const url = config.source.feedUrl;
   if (!url) throw new Error('INVENTORY_FEED_URL is not set — the authorized feed is not connected');
   const headers = { Accept: 'application/json', 'User-Agent': config.source.userAgent };
-  if (process.env.INVENTORY_FEED_TOKEN) headers.Authorization = `Bearer ${process.env.INVENTORY_FEED_TOKEN}`;
+  if (config.source.feedToken) headers.Authorization = `Bearer ${config.source.feedToken}`;
   const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(60000) });
   if (!res.ok) throw new Error(`Feed returned HTTP ${res.status}`);
   const json = await res.json();
@@ -72,4 +71,4 @@ async function fetchFeed(fetchImpl = fetch) {
   return list.map(mapFeedUnit);
 }
 
-module.exports = { mapFeedUnit, classifyFeedUnit, fetchFeed };
+export { mapFeedUnit, classifyFeedUnit, fetchFeed };

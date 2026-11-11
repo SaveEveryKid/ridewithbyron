@@ -1,25 +1,16 @@
 {
   "name": "ridewithbyron",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "RideWithByron.com — Byron Green's personal powersports sales site (Shoals Outdoor Sports, Florence AL)",
-  "main": "src/server.js",
-  "engines": {
-    "node": ">=20"
-  },
+  "type": "module",
+  "description": "RideWithByron.com — Byron Green's powersports sales site (Shoals Outdoor Sports, Florence AL). A Cloudflare Worker; works alongside torque-crm.",
   "scripts": {
-    "start": "node src/server.js",
-    "sync": "node src/sync/cli.js",
-    "test": "node --test test/*.test.js",
-    "hash-password": "node src/hash-password.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js"
   },
-  "dependencies": {
-    "@fontsource/barlow-condensed": "^5.3.0",
-    "better-sqlite3": "^13.1.1",
-    "cheerio": "^1.2.0",
-    "compression": "^1.8.2",
-    "express": "^4.22.3",
-    "express-rate-limit": "^8.7.4",
-    "helmet": "^8.3.0"
+  "devDependencies": {
+    "better-sqlite3": "^12.0.0",
+    "wrangler": "^4.155.0"
   }
 }

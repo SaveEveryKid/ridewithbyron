@@ -1,4 +1,3 @@
-'use strict';
 // Shopping taxonomy derived from the source's own fields (category, model type, model name).
 // Categories shown on the site are built from whatever Florence actually has in stock.
 
@@ -46,4 +45,4 @@ function unitSlug(u) {
   return `${base}-${slugify(u.stockNumber || '') || u.guid.slice(0, 8)}-${u.guid.slice(0, 6)}`;
 }
 
-module.exports = { slugify, vehicleType, family, unitSlug };
+export { slugify, vehicleType, family, unitSlug };

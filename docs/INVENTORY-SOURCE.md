@@ -38,48 +38,28 @@ A unit is public only if **all** hold on its most recent successful check:
 
 Anything else is `other_location`, `catalog`, `unavailable`, or — when evidence is missing or contradictory — `quarantined` (hidden, listed in the admin dashboard). The gate is re-run for every public unit on every sync.
 
-## Integration options, in order of preference
+## How the site gets inventory
 
-### 1. Authorized DX1 feed — recommended for production (NOT CONNECTED)
+### In use: the dealership site's own inventory search
 
-Ask Shoals Outdoor Sports management / their DX1 account rep for one of:
+`src/sync/search.js` — the same mechanism Torque CRM's Inventory screen uses. Each sync reads one dealer inventory page to get the site's search-only key (scoped to this dealer's unsold units, renewed hourly), then asks the site's inventory index for everything. About 5 requests return every unit, each with `DealershipName`.
 
-* a DX1 inventory export/feed (the kind DX1 syndicates to marketplaces) for the organization, including `DealershipId` and dealership name per unit; **or**
-* written permission plus a WAF allow-rule for this site's sync user-agent / server IP.
+* Every record passes the Florence gate above; anything else is excluded or quarantined.
+* A unit that leaves the index is hidden on the next sync. Empty, partial or suspiciously small results are refused and nothing changes.
+* If the dealer page answers with an anti-bot challenge, the sync retries once after a short pause, then stops and pauses scheduled runs for 45 minutes. It never tries to get around a challenge.
+* **Not yet run against the live site.** Tested with a real sample record from Torque's repository. The first live run (Admin → Run sync now) is the real test: check counts, locations and prices.
+* Unknown until that run: how rich the description/spec fields are, and whether the index contains manufacturer catalog entries (they would be quarantined for lacking a stock number).
+* The key is public and read-only but is issued for the dealership's own website. Get the dealership's OK.
 
-When a feed URL exists, set `INVENTORY_FEED_URL` (and `INVENTORY_FEED_TOKEN` if needed). `src/sync/feed.js` already maps and gates feed records and is covered by tests; its field mapping may need a small adjustment to the real export format.
+### Tried and retired: reading every unit page
 
-### 2. Public-page synchronization — implemented and working, with limits
+Sitemap → one page per unit. It worked (real Florence units were verified this way on 2026-11-11) but needs hundreds of requests per sync, and the dealership's Azure WAF challenged it after ~160 requests and then almost immediately. It was removed in the Cloudflare port; the code is in git history.
 
-Florence `sitemap.xml` → the same unit path on the main site → Florence gate. Tested live on 2026-11-11: real Florence units were verified and listed (e.g. stock H902, H814A, U721), Tuscumbia units and catalog pages were excluded.
+Two things learned there still matter: the Florence site's own unit pages do not print a location line (the main site does), and URL slugs/titles disagree about location — which is why the gate uses only the record's dealership name and photo-path id.
 
-**The initial load did not finish in testing.** Of ~796 discovered pages, 174 were checked before the dealership's WAF began challenging nearly every request from the test server. The remaining pages are queued and resume automatically.
+### Available if ever issued: an authorized DX1 feed
 
-**Observed limits (important):**
-
-* The WAF intermittently answers `/sitemap.xml` with a JavaScript challenge.
-* At one request every 1.5 s, the WAF challenged a unit page after ~160 requests.
-
-The engine never attempts to solve or evade a challenge. It therefore:
-
-* sends an honest user-agent, one request at a time, **10 s apart** (the crawl-delay the site's robots.txt asks of crawlers);
-* caps each run (`SYNC_MAX_PAGES_PER_RUN`, default 240) and resumes unfinished work next run;
-* re-verifies public units first every run; rotates non-Florence/catalog pages slowly (location changes are still caught);
-* on a challenge: retries the sitemap once after 60 s; otherwise ends the run, keeps verified data, and pauses scheduled runs for 45 min (one cycle).
-
-Consequences: the first full pass takes a few hours; steady-state freshness is ~45–60 min **if** the WAF tolerates it. If challenges recur, listings go stale → flagged → hidden after 24 h. That is the safe failure, but it is why option 1 is the real answer.
-
-### 3. Dealer-site inventory search — implemented, default mode, NOT yet tested live
-
-`SOURCE_MODE=search` (`src/sync/search.js`). This is the mechanism Torque CRM's Inventory screen already uses: read one dealer inventory page to get the site's search-only key (scoped to this dealer's unsold units, renewed hourly), then query the site's inventory index. About 5 requests return every unit, each with `DealershipName`.
-
-* Every record passes the same Florence gate: `DealershipName` must equal the Florence name and any dealership id in its photo paths must be the Florence id; otherwise it is excluded or quarantined.
-* A unit that leaves the index is hidden on the next sync. Incomplete reads and suspicious drops are refused.
-* Covered by automated tests using a real sample record from Torque's repository. **A live run from the build environment was not permitted, so the first real sync must be watched** (Admin → Run sync now → check counts, locations and a few prices against the dealership site).
-* Caveat: the key is issued for the dealership's own website search. It is public and read-only, but using it from another service is not a formal agreement — get the dealership's OK, as with photos.
-* Not confirmed until that first run: whether this index includes manufacturer catalog entries (they would be quarantined for lacking a stock number), and how rich the spec/description fields are compared with unit pages.
-
-Set `SOURCE_MODE=pages` to fall back to option 2.
+Set `INVENTORY_FEED_URL` (and `INVENTORY_FEED_TOKEN`). `src/sync/feed.js` maps and gates feed records; its field mapping may need a small adjustment to the real export format. This remains the most durable option.
 
 ## Before production
 

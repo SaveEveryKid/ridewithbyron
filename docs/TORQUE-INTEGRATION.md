@@ -12,7 +12,9 @@
 | `TORQUE_ASSIGNEE` | defaults to `Byron Green` |
 | `NOTIFY_WEBHOOK_URL` | optional: any relay that turns `{ "text": "…" }` into an instant SMS/push |
 
-Credentials live only in server environment variables; none reach the browser.
+Add these as **Secrets** on the ridewithbyron Worker (Cloudflare → the Worker → Settings → Variables and Secrets). None of them reach the browser.
+
+**Torque CRM does not have a lead-intake address yet.** Its Worker (`torque-crm/worker/index.ts`) only accepts requests from a logged-in browser. The missing piece is one small route in Torque — for example `POST /api/leads/intake` — that checks the signature below and saves the lead as a customer row. Both Workers are on the same Cloudflare account, so `TORQUE_WEBHOOK_URL` would simply be `https://torque-crm.<your-subdomain>.workers.dev/api/leads/intake`.
 
 ## Request
 
@@ -60,13 +62,13 @@ X-RWB-Signature: sha256=HMAC_SHA256(secret, "{timestamp}.{raw body}")
 ## Delivery guarantees
 
 * Leads are written to the site's database first, then delivered; a Torque outage never loses a lead.
-* Non-2xx or timeout → retried with exponential backoff (2, 4, 8 … minutes, capped at 6 h, 20 attempts), then marked `failed` and shown in the dashboard.
+* Non-2xx or timeout → retried with exponential backoff (2, 4, 8 … minutes, capped at 6 h, 20 attempts; retries run with the 30-minute scheduled trigger, then marked `failed` and shown in the dashboard.
 * Leads captured before Torque is configured are marked `not configured` and are sent automatically once it is.
 * Double-submits (same phone, same unit, same intent within 10 minutes) are collapsed before they reach Torque.
 
 ## Connecting and verifying
 
-1. Set the variables and restart.
+1. Add the secrets (they take effect right away).
 2. Admin → Leads → **Send test lead to Torque**. The dashboard reports the real HTTP result.
 3. Confirm in Torque: contact created, vehicle attached, source saved, task created, notification received.
 4. Submit the same phone again and confirm Torque updated the contact rather than duplicating it.

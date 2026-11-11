@@ -1,9 +1,8 @@
-'use strict';
-const config = require('../config');
-const { db, getSetting } = require('../db');
-const { syncHealth } = require('../sync/engine');
-const { INTENTS } = require('../leads');
-const { esc, money, layout, ago, content, logo } = require('./ui');
+import { config } from '../config.js';
+import { q as dbq, getSetting } from '../db.js';
+import { syncHealth } from '../sync/engine.js';
+import { INTENTS } from '../leads.js';
+import { esc, money, layout, ago, content, logo } from './ui.js';
 
 const TZ = { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' };
 const dt = (iso) => (iso ? new Date(iso).toLocaleString('en-US', TZ) + ' CT' : '—');
@@ -21,36 +20,37 @@ function shell(title, active, csrf, body) {
 }
 
 function login(error) {
-  const ready = !!config.adminPasswordHash;
+  const ready = !!config.adminPassword;
   return layout({
     bare: true, noindex: true, title: 'Admin sign in · RideWithByron', path: '/admin/login',
     body: `<div class="login"><div style="margin-bottom:20px">${logo('l')}</div><div class="block"><h2>Admin sign in</h2>
-${ready ? '' : '<div class="notice bad">No admin password is configured. Run <code>npm run hash-password -- "your password"</code> and set <code>ADMIN_PASSWORD_HASH</code>.</div>'}
+${ready ? '' : '<div class="notice bad">No admin password is configured. In Cloudflare, open this Worker → Settings → Variables and Secrets and add a secret named <code>ADMIN_PASSWORD</code>.</div>'}
 ${error ? `<div class="notice bad">${esc(error)}</div>` : ''}
 <form class="form" method="post" action="/admin/login"><label class="f">Password<input type="password" name="password" autocomplete="current-password" required autofocus></label><button class="btn btn-primary btn-block">Sign in</button></form></div></div>`,
   });
 }
 
-function overview(csrf, flash) {
+async function overview(csrf, flash) {
   const h = syncHealth();
-  const counts = Object.fromEntries(db.prepare('SELECT status, COUNT(*) n FROM units GROUP BY status').all().map((r) => [r.status, r.n]));
-  const hidden = db.prepare("SELECT COUNT(*) n FROM overrides o JOIN units u ON u.guid=o.guid WHERE o.hidden=1 AND u.status='active'").get().n;
+  const counts = Object.fromEntries((await dbq.all('SELECT status, COUNT(*) n FROM units GROUP BY status')).map((r) => [r.status, r.n]));
+  const hidden = (await dbq.get("SELECT COUNT(*) n FROM overrides o JOIN units u ON u.guid=o.guid WHERE o.hidden=1 AND u.status='active'")).n;
   const staleCut = new Date(Date.now() - config.source.staleAfterMinutes * 60000).toISOString();
-  const stale = db.prepare("SELECT COUNT(*) n FROM units WHERE status='active' AND last_verified < ?").get(staleCut).n;
-  const runs = db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 8').all();
-  const quarantined = db.prepare("SELECT guid,title,stock_number,status_reason,location_name,source_url,last_checked FROM units WHERE status='quarantined' ORDER BY last_checked DESC LIMIT 50").all();
+  const stale = (await dbq.get("SELECT COUNT(*) n FROM units WHERE status='active' AND last_verified < ?", [staleCut])).n;
+  const runs = (await dbq.all('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 8'));
+  const quarantined = (await dbq.all("SELECT guid,title,stock_number,status_reason,location_name,source_url,last_checked FROM units WHERE status='quarantined' ORDER BY last_checked DESC LIMIT 50"));
   const since = (d) => new Date(Date.now() - d * 86400e3).toISOString();
-  const leadN = (d, where = '1=1') => db.prepare(`SELECT COUNT(*) n FROM leads WHERE created_at >= ? AND ${where}`).get(since(d)).n;
-  const crmPending = db.prepare("SELECT crm_status, COUNT(*) n FROM leads GROUP BY crm_status").all();
-  const errors = db.prepare('SELECT * FROM error_log ORDER BY id DESC LIMIT 8').all();
+  const leadCount = async (d, where = '1=1') => (await dbq.get(`SELECT COUNT(*) n FROM leads WHERE created_at >= ? AND ${where}`, [since(d)])).n;
+  const lead = { d1: await leadCount(1), d7: await leadCount(7), quote: await leadCount(30, "intent='quote'"), visit: await leadCount(30, "intent='visit'") };
+  const crmPending = (await dbq.all("SELECT crm_status, COUNT(*) n FROM leads GROUP BY crm_status"));
+  const errors = (await dbq.all('SELECT * FROM error_log ORDER BY id DESC LIMIT 8'));
   const blockedUntil = getSetting('sync_blocked_until', null);
   const cooling = blockedUntil && new Date(blockedUntil) > new Date();
   const torqueOn = !!config.torque.webhookUrl;
-  const delivered = db.prepare("SELECT COUNT(*) n FROM leads WHERE crm_status='delivered'").get().n;
+  const delivered = (await dbq.get("SELECT COUNT(*) n FROM leads WHERE crm_status='delivered'")).n;
   return shell('Overview', '/admin', csrf, `
 ${flash ? `<div class="notice ok">${esc(flash)}</div>` : ''}
 ${h.paused ? '<div class="notice bad"><b>Inventory synchronization is SUSPENDED.</b> Listings are not being refreshed; they are marked stale after a few hours and hidden after 24 hours.</div>' : ''}
-${cooling ? `<div class="notice bad">The dealership site returned an anti-bot challenge. Automatic runs are paused until ${esc(dt(blockedUntil))}. This usually means the public-page sync is not welcome at this volume — the durable fix is an authorized inventory feed (see docs/INVENTORY-SOURCE.md).</div>` : ''}
+${cooling ? `<div class="notice bad">The dealership site returned an anti-bot challenge. Automatic runs are paused until ${esc(dt(blockedUntil))}. Existing listings are kept and marked for re-verification. If this keeps happening, see docs/INVENTORY-SOURCE.md.</div>` : ''}
 <h2 style="margin-top:0">Inventory synchronization</h2>
 <div class="stats">
 <div class="stat"><b>${counts.active || 0}</b><span>Florence units live${hidden ? ` (${hidden} hidden by you)` : ''}</span></div>
@@ -59,32 +59,33 @@ ${cooling ? `<div class="notice bad">The dealership site returned an anti-bot ch
 <div class="stat"><b style="color:${stale ? 'var(--warn)' : 'inherit'}">${stale}</b><span>Live units awaiting re-verification</span></div>
 <div class="stat"><b>${counts.other_location || 0}</b><span>Excluded: other locations</span></div>
 <div class="stat"><b>${counts.catalog || 0}</b><span>Excluded: catalog (not in stock)</span></div>
+<div class="stat"><b>${runs[0] && runs[0].source_count != null ? runs[0].source_count : '—'}</b><span>Records read on last sync</span></div>
 <div class="stat"><b>${(counts.unavailable || 0) + (counts.removed || 0)}</b><span>Sold / removed (hidden)</span></div>
-<div class="stat"><b>${counts.pending || 0}</b><span>Discovered, awaiting first check</span></div>
+
 </div>
 <div class="inline" style="margin-top:14px">
 <form method="post" action="/admin/sync/run"><input type="hidden" name="_csrf" value="${csrf}"><button class="btn btn-primary btn-sm"${h.running ? ' disabled' : ''}>${h.running ? 'Sync running…' : 'Run sync now'}</button></form>
 <form method="post" action="/admin/sync/${h.paused ? 'resume' : 'pause'}"><input type="hidden" name="_csrf" value="${csrf}"><button class="btn btn-sm ${h.paused ? 'btn-white' : 'btn-ghost'}" style="${h.paused ? '' : 'border-color:var(--bad);color:var(--bad)'}">${h.paused ? 'Resume synchronization' : 'Suspend synchronization'}</button></form>
 <span class="muted small">Source: ${esc(config.source.baseUrl)} · every ${config.source.intervalMinutes} min · Florence id ${esc(config.source.florenceDealershipId.slice(0, 8))}…</span></div>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Pages</th><th>New</th><th>Updated</th><th>Price Δ</th><th>Removed</th><th>Quar.</th><th>Errors</th><th>Message</th></tr></thead><tbody>
-${runs.map((r) => `<tr><td>${esc(dt(r.started_at))}</td><td>${esc(r.trigger)}</td><td>${pill(r.status, STATUS_KIND[r.status])}</td><td>${r.fetched}</td><td>${r.added}</td><td>${r.updated}</td><td>${r.price_changes}</td><td>${r.removed}</td><td>${r.quarantined}</td><td>${r.errors}</td><td>${esc(r.message || '')}</td></tr>`).join('') || '<tr><td colspan="11">No runs yet.</td></tr>'}</tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Records</th><th>New</th><th>Updated</th><th>Price Δ</th><th>Removed</th><th>Quar.</th><th>Errors</th><th>Message</th></tr></thead><tbody>
+${runs.map((r) => `<tr><td>${esc(dt(r.started_at))}</td><td>${esc(r.trigger)}</td><td>${pill(r.status, STATUS_KIND[r.status])}</td><td>${r.source_count ?? '—'}</td><td>${r.added}</td><td>${r.updated}</td><td>${r.price_changes}</td><td>${r.removed}</td><td>${r.quarantined}</td><td>${r.errors}</td><td>${esc(r.message || '')}</td></tr>`).join('') || '<tr><td colspan="11">No runs yet.</td></tr>'}</tbody></table></div>
 
 <h2>Inventory errors &amp; quarantine</h2>
 ${quarantined.length ? `<p class="muted small">These units were found but their Florence location could not be verified, so they are not shown publicly.</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Unit</th><th>Stock</th><th>Source location</th><th>Reason</th><th>Checked</th></tr></thead><tbody>${quarantined.map((q) => `<tr><td><a href="${esc(q.source_url)}" target="_blank" rel="noopener noreferrer">${esc(q.title || q.guid)}</a></td><td>${esc(q.stock_number || '')}</td><td>${esc(q.location_name || '—')}</td><td>${esc(q.status_reason)}</td><td>${esc(ago(q.last_checked))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing in quarantine.</p>'}
 
 <h2>Leads</h2>
-<div class="stats"><div class="stat"><b>${leadN(1)}</b><span>Last 24 hours</span></div><div class="stat"><b>${leadN(7)}</b><span>Last 7 days</span></div><div class="stat"><b>${leadN(30, "intent='quote'")}</b><span>Quote requests (30 days)</span></div><div class="stat"><b>${leadN(30, "intent='visit'")}</b><span>Visit requests (30 days)</span></div></div>
-<div class="notice ${torqueOn ? (delivered ? 'ok' : 'info') : ''}"><b>Torque CRM:</b> ${torqueOn ? (delivered ? `connected — ${delivered} lead(s) delivered.` : 'webhook configured but no delivery has succeeded yet. Use “Send test lead to Torque” on the Leads tab.') : 'NOT CONNECTED. Leads are stored safely here and will be delivered automatically once TORQUE_WEBHOOK_URL is set.'} ${crmPending.map((c) => `${pill(c.crm_status + ': ' + c.n, c.crm_status === 'delivered' ? 'ok' : c.crm_status === 'failed' ? 'bad' : 'warn')}`).join(' ')}</div>
+<div class="stats"><div class="stat"><b>${lead.d1}</b><span>Last 24 hours</span></div><div class="stat"><b>${lead.d7}</b><span>Last 7 days</span></div><div class="stat"><b>${lead.quote}</b><span>Quote requests (30 days)</span></div><div class="stat"><b>${lead.visit}</b><span>Visit requests (30 days)</span></div></div>
+<div class="notice ${torqueOn ? (delivered ? 'ok' : 'info') : ''}"><b>Torque CRM:</b> ${torqueOn ? (delivered ? `connected — ${delivered} lead(s) delivered.` : 'webhook configured but no delivery has succeeded yet. Use “Send test lead to Torque” on the Leads tab.') : 'NOT CONNECTED. Leads are stored safely here and will be delivered automatically once the TORQUE_WEBHOOK_URL secret is set.'} ${crmPending.map((c) => `${pill(c.crm_status + ': ' + c.n, c.crm_status === 'delivered' ? 'ok' : c.crm_status === 'failed' ? 'bad' : 'warn')}`).join(' ')}</div>
 
 <h2>Recent errors</h2>
 ${errors.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Area</th><th>Message</th></tr></thead><tbody>${errors.map((e) => `<tr><td>${esc(dt(e.at))}</td><td>${esc(e.scope)}</td><td>${esc(e.message)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No errors logged.</p>'}`);
 }
 
-function inventoryAdmin(csrf, q) {
+async function inventoryAdmin(csrf, q) {
   const status = ['active', 'quarantined', 'unavailable', 'removed', 'other_location'].includes(q.status) ? q.status : 'active';
   const term = typeof q.q === 'string' ? q.q.slice(0, 60) : '';
-  const rows = db.prepare(`SELECT u.guid,u.title,u.stock_number,u.price,u.msrp,u.slug,u.location_name,u.status_reason,u.last_verified,u.last_checked,u.source_url,COALESCE(o.featured,0) featured,COALESCE(o.hidden,0) hidden,o.badge,o.note
-    FROM units u LEFT JOIN overrides o ON o.guid=u.guid WHERE u.status=? AND (?='' OR lower(u.title||' '||COALESCE(u.stock_number,'')) LIKE ?) ORDER BY featured DESC, u.title LIMIT 400`).all(status, term, `%${term.toLowerCase()}%`);
+  const rows = (await dbq.all(`SELECT u.guid,u.title,u.stock_number,u.price,u.msrp,u.slug,u.location_name,u.status_reason,u.last_verified,u.last_checked,u.source_url,COALESCE(o.featured,0) featured,COALESCE(o.hidden,0) hidden,o.badge,o.note
+    FROM units u LEFT JOIN overrides o ON o.guid=u.guid WHERE u.status=? AND (?='' OR lower(u.title||' '||COALESCE(u.stock_number,'')) LIKE ?) ORDER BY featured DESC, u.title LIMIT 400`, [status, term, `%${term.toLowerCase()}%`]));
   return shell('Inventory', '/admin/inventory', csrf, `
 <h2 style="margin-top:0">Synced inventory</h2>
 <p class="muted small">Feature, hide, badge or annotate units. These settings are stored separately and never change the synced dealership data. Hidden units stay hidden even when the sync updates them.</p>
@@ -97,9 +98,9 @@ ${rows.map((u) => `<tr><td>${u.slug && status === 'active' ? `<a href="/inventor
 <form class="inline" method="post" action="/admin/unit/${u.guid}" style="margin-top:6px"><input type="hidden" name="_csrf" value="${csrf}"><input type="text" name="badge" maxlength="24" placeholder="Badge" value="${esc(u.badge || '')}"><input type="text" name="note" maxlength="300" placeholder="Byron’s note" value="${esc(u.note || '')}" style="width:190px"><button class="mini" name="save" value="1">Save</button></form>` : '<span class="muted small">not public</span>'}</td></tr>`).join('') || '<tr><td colspan="6">No units with this status.</td></tr>'}</tbody></table></div>`);
 }
 
-function leadsAdmin(csrf, q, flash) {
+async function leadsAdmin(csrf, q, flash) {
   const intent = INTENTS[q.intent] ? q.intent : '';
-  const rows = db.prepare(`SELECT * FROM leads WHERE (?='' OR intent=?) ORDER BY id DESC LIMIT 300`).all(intent, intent);
+  const rows = (await dbq.all(`SELECT * FROM leads WHERE (?='' OR intent=?) ORDER BY id DESC LIMIT 300`, [intent, intent]));
   return shell('Leads', '/admin/leads', csrf, `
 ${flash ? `<div class="notice info">${esc(flash)}</div>` : ''}
 <h2 style="margin-top:0">Incoming leads</h2>
@@ -116,16 +117,16 @@ ${rows.map((l) => `<tr style="${l.handled ? 'opacity:.55' : ''}"><td>${esc(dt(l.
 <td><form method="post" action="/admin/lead/${l.id}"><input type="hidden" name="_csrf" value="${csrf}"><button class="mini" name="handled" value="${l.handled ? 0 : 1}">${l.handled ? 'Reopen' : 'Done'}</button></form></td></tr>`).join('') || '<tr><td colspan="8">No leads yet.</td></tr>'}</tbody></table></div>`);
 }
 
-function traffic(csrf) {
+async function traffic(csrf) {
   const since = new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
-  const sources = db.prepare("SELECT source, COUNT(DISTINCT visitor||day) visits, COUNT(*) views FROM events WHERE type='view' AND day>=? GROUP BY source ORDER BY visits DESC").all(since);
-  const leadSrc = Object.fromEntries(db.prepare('SELECT source, COUNT(*) n FROM leads WHERE created_at>=? GROUP BY source').all(since).map((r) => [r.source, r.n]));
-  const top = db.prepare(`SELECT e.unit_guid, u.title, u.stock_number, u.slug, u.status, COUNT(*) views, COUNT(DISTINCT e.visitor||e.day) visitors,
+  const sources = (await dbq.all("SELECT source, COUNT(DISTINCT visitor||day) visits, COUNT(*) views FROM events WHERE type='view' AND day>=? GROUP BY source ORDER BY visits DESC", [since]));
+  const leadSrc = Object.fromEntries((await dbq.all('SELECT source, COUNT(*) n FROM leads WHERE created_at>=? GROUP BY source', [since])).map((r) => [r.source, r.n]));
+  const top = (await dbq.all(`SELECT e.unit_guid, u.title, u.stock_number, u.slug, u.status, COUNT(*) views, COUNT(DISTINCT e.visitor||e.day) visitors,
     (SELECT COUNT(*) FROM leads l WHERE l.unit_guid=e.unit_guid AND l.created_at>=?) leads,
     (SELECT COUNT(*) FROM events c WHERE c.unit_guid=e.unit_guid AND c.type IN ('call','text') AND c.day>=?) taps
-    FROM events e LEFT JOIN units u ON u.guid=e.unit_guid WHERE e.type='view' AND e.unit_guid IS NOT NULL AND e.day>=? GROUP BY e.unit_guid ORDER BY views DESC LIMIT 25`).all(since, since, since);
-  const days = db.prepare("SELECT day, COUNT(DISTINCT visitor) visitors, COUNT(*) views FROM events WHERE type='view' AND day>=? GROUP BY day ORDER BY day DESC LIMIT 14").all(since);
-  const taps = db.prepare("SELECT type, COUNT(*) n FROM events WHERE type IN ('call','text','lead_open') AND day>=? GROUP BY type").all(since);
+    FROM events e LEFT JOIN units u ON u.guid=e.unit_guid WHERE e.type='view' AND e.unit_guid IS NOT NULL AND e.day>=? GROUP BY e.unit_guid ORDER BY views DESC LIMIT 25`, [since, since, since]));
+  const days = (await dbq.all("SELECT day, COUNT(DISTINCT visitor) visitors, COUNT(*) views FROM events WHERE type='view' AND day>=? GROUP BY day ORDER BY day DESC LIMIT 14", [since]));
+  const taps = (await dbq.all("SELECT type, COUNT(*) n FROM events WHERE type IN ('call','text','lead_open') AND day>=? GROUP BY type", [since]));
   const allSrc = [...new Set([...sources.map((s) => s.source), ...Object.keys(leadSrc)])];
   return shell('Traffic', '/admin/traffic', csrf, `
 <h2 style="margin-top:0">Traffic sources — last 30 days</h2><p class="muted small">First-party counts (no cookies). Visits are unique visitors per day; bots are filtered by user-agent.</p>
@@ -152,13 +153,13 @@ ${flash ? `<div class="notice ok">${esc(flash)}</div>` : ''}
 <button class="btn btn-primary">Save content</button></form>`);
 }
 
-function logs(csrf, q) {
-  const runId = parseInt(q.run, 10) || (db.prepare('SELECT MAX(id) id FROM sync_runs').get().id || 0);
-  const runs = db.prepare('SELECT id, started_at, status FROM sync_runs ORDER BY id DESC LIMIT 40').all();
-  const rows = db.prepare('SELECT * FROM sync_log WHERE run_id=? ORDER BY id DESC LIMIT 600').all(runId);
+async function logs(csrf, q) {
+  const runId = parseInt(q.run, 10) || ((await dbq.get('SELECT MAX(id) id FROM sync_runs')).id || 0);
+  const runs = (await dbq.all('SELECT id, started_at, status FROM sync_runs ORDER BY id DESC LIMIT 40'));
+  const rows = (await dbq.all('SELECT * FROM sync_log WHERE run_id=? ORDER BY id DESC LIMIT 600', [runId]));
   return shell('Sync logs', '/admin/logs', csrf, `<h2 style="margin-top:0">Synchronization log</h2>
 <form class="inline" method="get"><select name="run" style="width:auto;min-height:40px">${runs.map((r) => `<option value="${r.id}"${r.id === runId ? ' selected' : ''}>#${r.id} · ${esc(dt(r.started_at))} · ${r.status}</option>`).join('')}</select><button class="mini" style="min-height:40px">View</button></form>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Time</th><th>Level</th><th>Unit</th><th>Message</th></tr></thead><tbody>${rows.map((r) => `<tr><td style="white-space:nowrap">${esc(dt(r.at))}</td><td>${pill(r.level, r.level === 'error' ? 'bad' : r.level === 'warn' ? 'warn' : '')}</td><td class="small muted">${esc((r.guid || '').slice(0, 8))}</td><td>${esc(r.message)}</td></tr>`).join('') || '<tr><td colspan="4">No log entries.</td></tr>'}</tbody></table></div>`);
 }
 
-module.exports = { login, overview, inventoryAdmin, leadsAdmin, traffic, contentAdmin, logs };
+export { login, overview, inventoryAdmin, leadsAdmin, traffic, contentAdmin, logs };

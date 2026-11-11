@@ -1,18 +1,18 @@
-'use strict';
 // Shared server-rendered UI: layout, logo, vehicle cards, lead form.
-const config = require('../config');
-const { getSetting } = require('../db');
-const { INTENTS, CONSENT_TEXT } = require('../leads');
-const { formToken } = require('../security');
-const fs = require('fs');
-const path = require('path');
+import { config } from '../config.js';
+import { getSetting } from '../db.js';
+import { INTENTS, CONSENT_TEXT } from '../leads.js';
+
+/** Per-request values that templates need but cannot await (set by the Worker before rendering). */
+export const reqState = { formToken: '' };
+const formToken = () => reqState.formToken;
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => (n == null ? null : '$' + Number(n).toLocaleString('en-US'));
 const jsonLd = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 
-// cache-busting for static assets
-const ver = (() => { try { return String(Math.floor(fs.statSync(path.join(__dirname, '../../public/css/site.css')).mtimeMs / 1000)); } catch (e) { return '1'; } })();
+// Bump when public/css or public/js change, so browsers fetch the new files.
+const ver = '3';
 
 const DEFAULT_CONTENT = {
   byronPhone: '',       // Byron's direct line, e.g. 256-555-0123. Until set, call/text buttons open the request form.
@@ -188,4 +188,4 @@ ${hasTags ? `<div class="consent" data-consent role="dialog" aria-label="Cookie 
 </body></html>`;
 }
 
-module.exports = { esc, money, jsonLd, layout, logo, card, leadForm, leadBtn, callBtn, textBtn, availability, priceHtml, quickSpecs, ago, content, DEFAULT_CONTENT, ICON, telHref, fmtPhone };
+export { esc, money, jsonLd, layout, logo, card, leadForm, leadBtn, callBtn, textBtn, availability, priceHtml, quickSpecs, ago, content, DEFAULT_CONTENT, ICON, telHref, fmtPhone };

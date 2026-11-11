@@ -1,13 +1,13 @@
-'use strict';
-const config = require('../config');
-const inv = require('../inventory');
-const { syncHealth } = require('../sync/engine');
-const { LANDING } = require('../seo');
-const { INTENTS } = require('../leads');
-const ui = require('./ui');
+import { config } from '../config.js';
+import * as inv from '../inventory.js';
+import { syncHealth } from '../sync/engine.js';
+import { LANDING } from '../seo.js';
+import { INTENTS } from '../leads.js';
+import * as ui from './ui.js';
+
 const { esc, money, jsonLd, layout, card, leadForm, leadBtn, callBtn, textBtn, ago, content } = ui;
 
-const D = config.dealership;
+const D = new Proxy({}, { get: (_, k) => config.dealership[k] });
 const qs = (obj) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries(obj)) if (v !== '' && v != null && v !== false && !(k === 'page' && v === 1) && !(k === 'sort' && v === 'featured')) p.set(k, v === true ? '1' : v); const s = p.toString(); return s ? '?' + s : ''; };
 
 function syncBanner() {
@@ -41,11 +41,11 @@ const heroArt = `<svg class="hero-art" viewBox="0 0 1440 620" preserveAspectRati
 <path d="M0 520c300-70 620-40 900 10s420 20 540-10" fill="none" stroke="url(#hg3)" stroke-width="3"/>
 <g fill="#1488ff" opacity=".5"><path d="M980 560l26-16 10 14-26 16zM1030 548l26-16 10 14-26 16zM1080 536l26-16 10 14-26 16zM1130 524l26-16 10 14-26 16zM1180 512l26-16 10 14-26 16zM1230 500l26-16 10 14-26 16zM1280 488l26-16 10 14-26 16zM1330 476l26-16 10 14-26 16z"/></g></svg>`;
 
-function home() {
+async function home() {
   const c = content();
-  const f = inv.facets();
-  const featured = inv.featured(8);
-  const latest = inv.latest(8);
+  const f = await inv.facets();
+  const featured = await inv.featured(8);
+  const latest = await inv.latest(8);
   const catTiles = [];
   for (const fam of f.polarisFamilies) catTiles.push({ href: `/inventory${qs({ make: 'Polaris', family: fam.value })}`, kicker: 'Polaris', name: fam.value === 'Youth' ? 'Youth' : fam.value, n: fam.n });
   for (const t of f.types) catTiles.push({ href: `/inventory${qs({ type: t.value })}`, kicker: 'Shop', name: t.value, n: t.n });
@@ -140,10 +140,10 @@ function resultsBlock(f, res, action) {
 ${res.units.length ? `<div class="grid">${res.units.map((u, i) => card(u, { eager: i < 3 })).join('')}</div>${pager}` : `<div class="empty"><h3 style="margin-bottom:8px">Nothing on the Florence lot matches that right now</h3><p>Inventory changes daily, and Byron often knows what’s inbound before it’s listed.</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${leadBtn('availability', 'Ask Byron to find one', 'btn btn-primary')}<a class="btn btn-ghost" href="/inventory">See all inventory</a></div></div>`}</div>`;
 }
 
-function inventory(query) {
+async function inventory(query) {
   const f = inv.parseFilters(query);
-  const fac = inv.facets();
-  const res = inv.search(f);
+  const fac = await inv.facets();
+  const res = await inv.search(f);
   const filtered = Object.entries(f).some(([k, v]) => !['sort', 'page'].includes(k) && v !== '' && v != null && v !== false);
   const bits = [f.condition === 'Used' ? 'Pre-Owned' : f.condition, f.year, f.make, f.family, f.type && !f.family ? f.type : ''].filter(Boolean).join(' ');
   const h1 = bits ? `${bits} in Florence, AL` : 'Florence Inventory';
@@ -158,9 +158,9 @@ function inventory(query) {
   });
 }
 
-function landing(l, query) {
+async function landing(l, query) {
   const f = { ...inv.parseFilters(query), ...l.filter };
-  const res = inv.search(f, { pageSize: 24 });
+  const res = await inv.search(f, { pageSize: 24 });
   const others = LANDING.filter((x) => x.slug !== l.slug).slice(0, 7);
   return layout({
     path: '/' + l.slug, canonical: '/' + l.slug, title: l.title, description: l.desc, noindex: f.page > 1,
@@ -173,10 +173,10 @@ function landing(l, query) {
   });
 }
 
-function unitPage(u) {
+async function unitPage(u) {
   const d = u.data || {};
   const k = d.keySpecs || {};
-  const rel = inv.related(u, 4);
+  const rel = await inv.related(u, 4);
   const feats = inv.unitFeatures(u);
   const imgs = u.images;
   const gallery = imgs.length ? `<div class="gal" data-gallery><div class="gal-main"><div class="gal-track" data-track tabindex="0" aria-label="Photo gallery">${imgs.map((src, i) => `<img src="${esc(i === 0 ? src : src.replace(/(\.\w+)$/, '_480px$1'))}" ${i === 0 ? 'fetchpriority="high"' : `data-full="${esc(src)}" loading="lazy"`} alt="${esc(u.title)} — photo ${i + 1} of ${imgs.length}" width="1200" height="900" decoding="async" data-ph>`).join('')}</div>
@@ -317,4 +317,4 @@ function notFound() {
   return layout({ path: '/404', title: 'Page not found | RideWithByron.com', noindex: true, body: `<div class="wrap sec" style="text-align:center"><span class="eyebrow">404</span><h1>That trail ends here</h1><p class="lede" style="margin:14px auto 22px">The page you’re looking for isn’t available. If it was a vehicle, it may have sold.</p><div class="hero-btns" style="justify-content:center"><a class="btn btn-primary" href="/inventory">Shop Inventory</a>${textBtn('btn btn-ghost', 'Text Byron')}</div></div>` });
 }
 
-module.exports = { home, inventory, landing, unitPage, about, contact, financing, privacy, aboutSite, notFound, qs };
+export { home, inventory, landing, unitPage, about, contact, financing, privacy, aboutSite, notFound, qs };

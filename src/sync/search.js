@@ -1,4 +1,3 @@
-'use strict';
 // Dealer-site search source — the same mechanism Torque CRM's Inventory screen uses.
 //
 // The dealership's inventory pages carry a search-only key for the site's own inventory index
@@ -8,14 +7,15 @@
 //
 // Every record still passes the Florence gate (classifyUnit): DealershipName must equal the
 // Florence name AND any dealership id embedded in its photo paths must be the Florence id.
-const config = require('../config');
-const { classifyUnit, isChallengePage } = require('./parse');
+import { config } from '../config.js';
+import { classifyUnit, isChallengePage } from './gate.js';
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const str = (v) => (typeof v === 'string' ? v.trim() || null : typeof v === 'number' ? String(v) : null);
 const num = (v) => { const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
 
 class SourceChallenge extends Error {}
+const FIELDS = ['objectID', 'Year', 'Manufacturer', 'ProductName', 'ProductType', 'ProductCategory', 'Condition', 'IsUsed', 'Price', 'SalePrice', 'Msrp', 'StockNumber', 'Vin', 'PhotoUrl', 'PhotoLists', 'ShowroomUrl', 'Color', 'DealershipName', 'Odometer', 'HasOdometer', 'OdometerUomCode', 'Specs', 'Description', 'Comments'];
 
 /** Pull the search setup out of a dealer inventory page. */
 function parseSearchConfig(html) {
@@ -56,7 +56,7 @@ function mapHit(h) {
   const find = (re) => { const r = flat.find(([k]) => re.test(k)); return r ? r[1] : null; };
   const seating = find(/person capacity|seating capacity|^seating$/i);
   return {
-    guid, sourceUrl: str(h.ShowroomUrl) || `${config.source.verifyBaseUrl}/dx1inventory/${guid}`,
+    guid, sourceUrl: str(h.ShowroomUrl) || `${'https://www.shoalsoutdoorsports.com'}/dx1inventory/${guid}`,
     title: [year, make, model].filter(Boolean).join(' ') || null, year, make, model,
     condition: h.IsUsed === true || /used/i.test(String(h.Condition || '')) ? 'Used' : 'New',
     stockNumber: str(h.StockNumber), vin: str(h.Vin), vinLabel: str(h.Vin) ? (/boat|watercraft|pontoon/i.test(String(h.ProductType || '')) ? 'HIN' : 'VIN') : null,
@@ -102,7 +102,7 @@ async function fetchAll(fetchImpl = fetch) {
   const hits = [];
   let total = 0;
   for (let page = 0; page < 15; page++) {
-    const params = new URLSearchParams({ query: '', page: String(page), hitsPerPage: '200' });
+    const params = new URLSearchParams({ query: '', page: String(page), hitsPerPage: '200', attributesToRetrieve: JSON.stringify(FIELDS), attributesToHighlight: '[]' });
     const r = await fetchImpl(`https://${cfg.appId.toLowerCase()}-dsn.algolia.net/1/indexes/${encodeURIComponent(cfg.index)}/query`, {
       method: 'POST', signal: AbortSignal.timeout(30000),
       headers: { 'X-Algolia-Application-Id': cfg.appId, 'X-Algolia-API-Key': cfg.apiKey, 'Content-Type': 'application/json', 'User-Agent': config.source.userAgent },
@@ -113,11 +113,10 @@ async function fetchAll(fetchImpl = fetch) {
     hits.push(...(body.hits || []));
     total = body.nbHits || hits.length;
     if (page + 1 >= (body.nbPages || 1)) break;
-    await new Promise((res) => setTimeout(res, 300));
   }
   // An incomplete read must never be mistaken for "the rest sold".
   if (hits.length < total) throw new Error(`Search returned ${hits.length} of ${total} units — incomplete read, not applied`);
   return hits.map(mapHit);
 }
 
-module.exports = { parseSearchConfig, mapHit, classifySearchUnit, fetchAll, SourceChallenge };
+export { parseSearchConfig, mapHit, classifySearchUnit, fetchAll, SourceChallenge };

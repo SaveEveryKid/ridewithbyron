@@ -1,9 +1,15 @@
-'use strict';
 // Lead capture -> local outbox -> Torque CRM (+ optional instant notification).
 // Leads go to Byron only. Nothing here posts to the dealership's general inquiry forms.
-const crypto = require('crypto');
-const config = require('./config');
-const { db, now, logError } = require('./db');
+import { config } from './config.js';
+import { q, now, logError } from './db.js';
+
+const enc = new TextEncoder();
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const sha256 = async (s) => hex(await crypto.subtle.digest('SHA-256', enc.encode(s)));
+async function hmacHex(secret, data) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return hex(await crypto.subtle.sign('HMAC', key, enc.encode(data)));
+}
 
 const INTENTS = {
   quote: 'Get My Best Quote', availability: 'Check Availability', visit: 'Schedule a Visit',
@@ -42,7 +48,7 @@ function classifySource(a = {}) {
 
 function sanitizeAttribution(raw) {
   let a = raw;
-  if (typeof raw === 'string') { try { a = JSON.parse(raw); } catch (e) { a = {}; } }
+  if (typeof raw === 'string') { try { a = JSON.parse(raw); } catch { a = {}; } }
   if (!a || typeof a !== 'object') a = {};
   const out = {};
   for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'referrer', 'landing_page', 'first_seen']) {
@@ -68,15 +74,15 @@ function validateLead(body) {
   };
 }
 
-function saveLead(lead, ctx) {
-  const dedupe = crypto.createHash('sha256').update(lead.phone_e164 || lead.email || lead.name).digest('hex').slice(0, 24);
+async function saveLead(lead, ctx) {
+  const dedupe = (await sha256(lead.phone_e164 || lead.email || lead.name)).slice(0, 24);
   // Collapse accidental double-submits (same person, same unit, same intent within 10 minutes).
-  const recent = db.prepare("SELECT id FROM leads WHERE dedupe_key=? AND intent=? AND COALESCE(unit_guid,'')=? AND created_at > ?")
-    .get(dedupe, lead.intent, ctx.unit ? ctx.unit.guid : '', new Date(Date.now() - 600e3).toISOString());
+  const recent = await q.get("SELECT id FROM leads WHERE dedupe_key=? AND intent=? AND COALESCE(unit_guid,'')=? AND created_at > ?",
+    [dedupe, lead.intent, ctx.unit ? ctx.unit.guid : '', new Date(Date.now() - 600e3).toISOString()]);
   if (recent) return { id: recent.id, duplicate: true };
   const attribution = sanitizeAttribution(ctx.attribution);
-  const info = db.prepare(`INSERT INTO leads (created_at,intent,name,phone,phone_e164,email,message,preferred_time,unit_guid,vehicle,stock_number,vehicle_url,source,attribution,page_url,consent_text,ip_hash,user_agent,dedupe_key,crm_status)
-    VALUES (@created_at,@intent,@name,@phone,@phone_e164,@email,@message,@preferred_time,@unit_guid,@vehicle,@stock_number,@vehicle_url,@source,@attribution,@page_url,@consent_text,@ip_hash,@user_agent,@dedupe_key,@crm_status)`).run({
+  const info = await q.run(`INSERT INTO leads (created_at,intent,name,phone,phone_e164,email,message,preferred_time,unit_guid,vehicle,stock_number,vehicle_url,source,attribution,page_url,consent_text,ip_hash,user_agent,dedupe_key,crm_status)
+    VALUES (@created_at,@intent,@name,@phone,@phone_e164,@email,@message,@preferred_time,@unit_guid,@vehicle,@stock_number,@vehicle_url,@source,@attribution,@page_url,@consent_text,@ip_hash,@user_agent,@dedupe_key,@crm_status)`, {
     ...lead, created_at: now(),
     unit_guid: ctx.unit ? ctx.unit.guid : null,
     vehicle: ctx.unit ? ctx.unit.title : (clean(ctx.vehicleText, 120) || null),
@@ -87,7 +93,7 @@ function saveLead(lead, ctx) {
     ip_hash: ctx.ipHash || null, user_agent: clean(ctx.userAgent, 200) || null,
     dedupe_key: dedupe, crm_status: config.torque.webhookUrl ? 'pending' : 'not_configured',
   });
-  return { id: info.lastInsertRowid, duplicate: false };
+  return { id: info.lastId, duplicate: false };
 }
 
 /** The payload contract Torque receives. Documented in docs/TORQUE-INTEGRATION.md. */
@@ -116,46 +122,42 @@ async function postJson(url, payload, headers = {}) {
 }
 
 async function deliverLead(id) {
-  const l = db.prepare('SELECT * FROM leads WHERE id=?').get(id);
+  const l = await q.get('SELECT * FROM leads WHERE id=?', [id]);
   if (!l) return;
   // Instant notification (optional), independent of CRM state
   if (config.notifyWebhookUrl && l.notify_status !== 'sent') {
     try {
       await postJson(config.notifyWebhookUrl, { text: `New ${INTENTS[l.intent] || l.intent} lead: ${l.name} ${l.phone}${l.vehicle ? ' — ' + l.vehicle + ' #' + (l.stock_number || '') : ''} (${l.source})`, lead_id: l.id });
-      db.prepare("UPDATE leads SET notify_status='sent' WHERE id=?").run(id);
-    } catch (e) { db.prepare("UPDATE leads SET notify_status='failed' WHERE id=?").run(id); logError('notify', e); }
+      await q.run("UPDATE leads SET notify_status='sent' WHERE id=?", [id]);
+    } catch (e) { await q.run("UPDATE leads SET notify_status='failed' WHERE id=?", [id]); await logError('notify', e); }
   }
-  if (!config.torque.webhookUrl) return;
-  if (l.crm_status === 'delivered') return;
+  if (!config.torque.webhookUrl || l.crm_status === 'delivered') return;
   const payload = torquePayload(l);
   const raw = JSON.stringify(payload);
   const ts = Math.floor(Date.now() / 1000).toString();
   const headers = { 'Idempotency-Key': payload.idempotency_key, 'X-RWB-Timestamp': ts };
   if (config.torque.apiKey) headers.Authorization = `Bearer ${config.torque.apiKey}`;
-  if (config.torque.signingSecret) headers['X-RWB-Signature'] = 'sha256=' + crypto.createHmac('sha256', config.torque.signingSecret).update(`${ts}.${raw}`).digest('hex');
+  if (config.torque.signingSecret) headers['X-RWB-Signature'] = 'sha256=' + await hmacHex(config.torque.signingSecret, `${ts}.${raw}`);
   try {
     const text = await postJson(config.torque.webhookUrl, payload, headers);
-    let ref = null; try { const j = JSON.parse(text); ref = String(j.id || j.contact_id || j.lead_id || '').slice(0, 80) || null; } catch (e) { /* non-JSON ack is fine */ }
-    db.prepare("UPDATE leads SET crm_status='delivered', crm_delivered_at=?, crm_attempts=crm_attempts+1, crm_last_error=NULL, crm_ref=? WHERE id=?").run(now(), ref, id);
+    let ref = null; try { const j = JSON.parse(text); ref = String(j.id || j.contact_id || j.lead_id || '').slice(0, 80) || null; } catch { /* non-JSON ack is fine */ }
+    await q.run("UPDATE leads SET crm_status='delivered', crm_delivered_at=?, crm_attempts=crm_attempts+1, crm_last_error=NULL, crm_ref=? WHERE id=?", [now(), ref, id]);
   } catch (e) {
     const attempts = l.crm_attempts + 1;
     const delayMin = Math.min(360, 2 ** attempts); // 2,4,8 … capped at 6h; retried for ~3 days
-    db.prepare('UPDATE leads SET crm_status=?, crm_attempts=?, crm_last_error=?, crm_next_attempt=? WHERE id=?')
-      .run(attempts >= 20 ? 'failed' : 'pending', attempts, e.message.slice(0, 300), new Date(Date.now() + delayMin * 60000).toISOString(), id);
-    logError('torque-delivery', e, `lead ${id}`);
+    await q.run('UPDATE leads SET crm_status=?, crm_attempts=?, crm_last_error=?, crm_next_attempt=? WHERE id=?',
+      [attempts >= 20 ? 'failed' : 'pending', attempts, e.message.slice(0, 300), new Date(Date.now() + delayMin * 60000).toISOString(), id]);
+    await logError('torque-delivery', e, `lead ${id}`);
   }
 }
 
-function startOutbox() {
-  const tick = async () => {
-    if (!config.torque.webhookUrl) return;
-    // Leads captured before Torque was configured get delivered once it is.
-    db.prepare("UPDATE leads SET crm_status='pending' WHERE crm_status='not_configured'").run();
-    const due = db.prepare("SELECT id FROM leads WHERE crm_status='pending' AND (crm_next_attempt IS NULL OR crm_next_attempt <= ?) ORDER BY id LIMIT 20").all(now());
-    for (const r of due) await deliverLead(r.id).catch((e) => logError('outbox', e));
-  };
-  setInterval(tick, 60000).unref();
-  setTimeout(tick, 3000).unref();
+/** Called from the scheduled trigger: (re)deliver anything still waiting. */
+async function runOutbox() {
+  if (!config.torque.webhookUrl) return;
+  // Leads captured before Torque was configured get delivered once it is.
+  await q.run("UPDATE leads SET crm_status='pending' WHERE crm_status='not_configured'");
+  const due = await q.all("SELECT id FROM leads WHERE crm_status='pending' AND (crm_next_attempt IS NULL OR crm_next_attempt <= ?) ORDER BY id LIMIT 10", [now()]);
+  for (const r of due) await deliverLead(r.id).catch((e) => logError('outbox', e));
 }
 
-module.exports = { INTENTS, CONSENT_TEXT, validateLead, saveLead, deliverLead, startOutbox, classifySource, sanitizeAttribution, normalizePhone, torquePayload };
+export { INTENTS, CONSENT_TEXT, validateLead, saveLead, deliverLead, runOutbox, classifySource, sanitizeAttribution, normalizePhone, torquePayload };

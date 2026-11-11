@@ -1,0 +1,22 @@
+// RideWithByron.com on Cloudflare Workers. Cloudflare builds and deploys this on every push.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ridewithbyron",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  // Lets this Worker call your Torque CRM Worker at its workers.dev address (same account).
+  // Without it Cloudflare blocks Worker-to-Worker calls on workers.dev (error 1042).
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+  // Keep the variables you add in the Cloudflare dashboard when a new version deploys.
+  "keep_vars": true,
+  // Stylesheet, script, fonts and icon. Everything else (pages, forms, admin) goes to the Worker.
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  // Inventory, leads and settings. Found by name: the D1 database called "ridewithbyron" on your account.
+  "d1_databases": [{ "binding": "DB", "database_name": "ridewithbyron" }],
+  // Inventory sync + lead delivery retries, every 30 minutes.
+  "triggers": { "crons": ["*/30 * * * *"] }
+  // Secrets (Settings → Variables and Secrets): ADMIN_PASSWORD (required);
+  // TORQUE_WEBHOOK_URL, TORQUE_API_KEY, TORQUE_SIGNING_SECRET, NOTIFY_WEBHOOK_URL (optional).
+  // Plain variables (optional): SITE_URL, GA4_MEASUREMENT_ID, GOOGLE_ADS_ID, GOOGLE_ADS_LEAD_LABEL, META_PIXEL_ID, SYNC_ENABLED.
+}
