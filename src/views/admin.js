@@ -146,7 +146,7 @@ ${flash ? `<div class="notice ok">${esc(flash)}</div>` : ''}
 <label class="f">Byron’s direct phone (enables one-tap Call / Text buttons)<input name="byronPhone" value="${esc(c.byronPhone)}" placeholder="256-555-0123" inputmode="tel"></label>
 <label class="f">Byron’s email (optional, not displayed publicly)<input name="byronEmail" type="email" value="${esc(c.byronEmail)}"></label>
 <label class="f">Hero photo URL (optional — use only photography you have rights to)<input name="heroImage" value="${esc(c.heroImage)}" placeholder="https://…"></label>
-<label class="check" style="font-size:.92rem;color:var(--text)"><input type="checkbox" name="showNoFees" value="1"${c.showNoFees ? ' checked' : ''}><span>Show “no doc, set-up or dealer prep fees” messaging. Keep this on only while it matches current Shoals Outdoor Sports policy.</span></label>
+<label class="check" style="font-size:.92rem;color:var(--text)"><input type="checkbox" name="showNoFees" value="1"${c.showNoFees ? ' checked' : ''}><span>Show “no dealer fees” messaging. Keep this on only while it matches current Shoals Outdoor Sports policy.</span></label>
 <label class="f">Extra “About Byron” paragraph (optional)<textarea name="aboutExtra" maxlength="2000">${esc(c.aboutExtra)}</textarea></label>
 <label class="f">Dealership hours — one per line as “Days | Hours”<textarea name="hours">${esc(c.hours.map((h) => h.join(' | ')).join('\n'))}</textarea></label>
 <label class="f">Customer testimonials — genuine, approved reviews only. One per line as “Quote | Name | Detail”. Leave empty to hide the section.<textarea name="testimonials" style="min-height:140px">${esc((c.testimonials || []).map((t) => [t.quote, t.name, t.detail || ''].join(' | ')).join('\n'))}</textarea></label>

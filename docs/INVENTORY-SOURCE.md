@@ -65,4 +65,4 @@ Set `INVENTORY_FEED_URL` (and `INVENTORY_FEED_TOKEN`). `src/sync/feed.js` maps a
 
 * Get the dealership's written OK to display its inventory, photos (hot-linked from DX1's CDN) and name on RideWithByron.com.
 * Get an authorized feed or a WAF allow-rule (above).
-* Confirm the "no doc / set-up / dealer prep fees" statement (published on both dealership sites on 2026-11-11) remains current; it can be switched off in Admin → Content.
+* Confirm the "no dealer fees" statement remains current (on 2026-11-11 both dealership sites published "no Doc Fees, Set-up Fees or Dealer Prep Charges"); it can be switched off in Admin → Content.

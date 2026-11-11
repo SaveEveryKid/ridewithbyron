@@ -57,7 +57,7 @@ async function home() {
 <h1>Your next <em>adventure</em> starts here.</h1>
 <p>Find your next Ranger, RZR, ATV, side-by-side or boat with Byron Green at Shoals Outdoor Sports in Florence, Alabama.</p>
 <div class="hero-btns"><a class="btn btn-primary" href="/inventory">Shop Inventory</a>${textBtn('btn btn-white', 'Text Byron')}</div>
-<div class="hero-meta">${freshness()}${f.total ? `<span><b>${f.total}</b> units on the Florence lot</span>` : ''}${c.showNoFees ? '<span>Upfront pricing · <b>no doc, set-up or dealer prep fees</b></span>' : ''}</div>
+<div class="hero-meta">${freshness()}${f.total ? `<span><b>${f.total}</b> units on the Florence lot</span>` : ''}${c.showNoFees ? '<span>Upfront pricing · <b>no dealer fees</b></span>' : ''}</div>
 </div></section>
 
 <div class="wrap">
@@ -80,7 +80,7 @@ ${featured.length ? `<section class="sec sec-alt"><div class="wrap"><div class="
 <section class="sec"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">One person. Straight answers.</span><h2>Why buy with <span>Byron?</span></h2><div class="slash"></div></div></div>
 <div class="why">
 <div><h3>You deal with one person</h3><p>Your call, text or form goes to Byron — not a call center or a shared inbox. Same person from first question to delivery day.</p></div>
-<div><h3>Straightforward buying</h3><p>${c.showNoFees ? 'Shoals Outdoor Sports gives its best price up front, with no doc fees, set-up fees or dealer prep charges. Byron walks you through the numbers line by line.' : 'Clear numbers explained line by line, so you know exactly what you’re paying for before you sign anything.'}</p></div>
+<div><h3>Straightforward buying</h3><p>${c.showNoFees ? 'Shoals Outdoor Sports gives its best price up front, with no dealer fees. Byron walks you through the numbers line by line.' : 'Clear numbers explained line by line, so you know exactly what you’re paying for before you sign anything.'}</p></div>
 <div><h3>Real product knowledge</h3><p>More than a decade selling vehicles. Byron will help you match the machine to how you’ll actually use it — work, trail, hunting or the lake.</p></div>
 <div><h3>No pressure</h3><p>Ask as many questions as you want. If it’s not the right fit or the right time, that’s fine.</p></div>
 <div><h3>Real Florence inventory</h3><p>What you see here is on the Florence lot, re-checked against the dealership’s listings throughout the day.</p></div>

@@ -83,4 +83,4 @@ npm test          # 17 tests: Florence filter, sync safety, leads, admin, every 
 npm run dev       # local copy at http://localhost:8787 (put ADMIN_PASSWORD=... in a .dev.vars file)
 ```
 
-Before going live, get Shoals Outdoor Sports' OK to show their inventory, photos (loaded from their image server) and name, and confirm the "no doc, set-up or dealer prep fees" wording is current — it can be switched off in Admin → Content.
+Before going live, get Shoals Outdoor Sports' OK to show their inventory, photos (loaded from their image server) and name, and confirm the "no dealer fees" wording is current — it can be switched off in Admin → Content.
