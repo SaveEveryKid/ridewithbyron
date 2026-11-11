@@ -1,6 +1,6 @@
 # Torque CRM integration
 
-**Status: NOT CONNECTED.** Torque's API/webhook documentation and credentials were not available when this was built, so nothing has been tested against Torque. The website side is complete: every lead is stored, queued, signed and delivered (with retries) as soon as an endpoint is configured.
+**Status: built on both sides, not yet switched on.** Tested with both Workers running locally (a lead submitted on the site arrived in Torque as a customer with a timeline entry and a call task). It has not run on Cloudflare yet, and it stays off until the two secrets below are set.
 
 ## What you need to provide
 
@@ -14,7 +14,7 @@
 
 Add these as **Secrets** on the ridewithbyron Worker (Cloudflare → the Worker → Settings → Variables and Secrets). None of them reach the browser.
 
-**Torque CRM does not have a lead-intake address yet.** Its Worker (`torque-crm/worker/index.ts`) only accepts requests from a logged-in browser. The missing piece is one small route in Torque — for example `POST /api/leads/intake` — that checks the signature below and saves the lead as a customer row. Both Workers are on the same Cloudflare account, so `TORQUE_WEBHOOK_URL` would simply be `https://torque-crm.<your-subdomain>.workers.dev/api/leads/intake`.
+**Torque's side is in a pull request** ([SaveEveryKid/torque-crm#1](https://github.com/SaveEveryKid/torque-crm/pull/1)): it adds `POST /leads/intake`, which checks the signature below and puts the lead on the right customer. Once that is merged, set `TORQUE_WEBHOOK_URL` to `https://torque-crm.<your-subdomain>.workers.dev/leads/intake`, and set `TORQUE_SIGNING_SECRET` here to the same value as `LEADS_SECRET` on torque-crm. `TORQUE_API_KEY` is not needed.
 
 ## Request
 

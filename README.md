@@ -39,7 +39,7 @@ Everything below is done in the Cloudflare dashboard (dash.cloudflare.com), on t
 |---|---|
 | Site, admin dashboard, lead capture | Working — tested in Cloudflare's local runtime and by the test suite |
 | Inventory sync from the dealership's site search (the same source Torque uses) | Built and tested against a real sample record. **Not yet run against the live site** — step 4 above is that first run |
-| Torque CRM | **Not connected.** Leads are stored and are delivered automatically once the Torque settings exist |
+| Torque CRM | Built on both sides and tested locally; **off until** [torque-crm#1](https://github.com/SaveEveryKid/torque-crm/pull/1) is merged and the secrets are set (see `docs/TORQUE-INTEGRATION.md`). Leads are stored meanwhile and delivered once it's on |
 | Byron's phone, Google/Meta tags, testimonials, custom domain | Not set — all optional, all set from the dashboard or Cloudflare |
 
 ## How it fits together
