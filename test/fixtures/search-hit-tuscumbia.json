@@ -1,0 +1,63 @@
+{
+ "StockNumber": "H4513A",
+ "TagLine": "CALL OR TEXT 256.389.8150!",
+ "OdometerUomCode": "MILES",
+ "DealershipName": "Shoals Outdoor Sports - Tuscumbia",
+ "ProductType": "Boat",
+ "HasOdometer": false,
+ "PhotoLists": [
+  {
+   "Seq": 7,
+   "RecordTypeCode": "DLR",
+   "Url": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000006.jpg"
+  },
+  {
+   "Seq": 8,
+   "RecordTypeCode": "DLR",
+   "Url": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000001.jpg"
+  },
+  {
+   "Seq": 9,
+   "RecordTypeCode": "DLR",
+   "Url": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000003.jpg"
+  },
+  {
+   "Seq": 10,
+   "RecordTypeCode": "DLR",
+   "Url": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000004.jpg"
+  },
+  {
+   "Seq": 11,
+   "RecordTypeCode": "DLR",
+   "Url": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000005.jpg"
+  },
+  {
+   "Seq": 12,
+   "RecordTypeCode": "DLR",
+   "Url": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000002.jpg"
+  }
+ ],
+ "TotalPrice": 3999,
+ "Vin": "CBI5143N78K",
+ "objectID": "8b3df5b0-d643-46a6-9faf-b4ea0160719b",
+ "Price": 3999,
+ "Manufacturer": "Alumacraft",
+ "Color": "",
+ "Year": 1978,
+ "Odometer": 0,
+ "Condition": "Used",
+ "_highlightResult": {
+  "ProductName": {
+   "value": "16' YAMAHA 1997 35OB"
+  }
+ },
+ "Dsp": 3999,
+ "NumberPhoto": 6,
+ "ProductName": "16' YAMAHA 1997 35OB",
+ "IsUsed": true,
+ "PhotoUrl": "https://cdpcdn.dx1app.com/products-private/prod/32547b8e-607e-4727-bb29-832a7148f24c/06fcbe5c-a659-49e3-93ff-b006014cc892/00000000-0000-0000-0000-000000000000/b8511dda-9827-44c2-aada-b4ea0160703f/8b3df5b0-d643-46a6-9faf-b4ea0160719b/6000000006.jpg",
+ "ShowroomUrl": "https://www.shoalsoutdoorsports.com/dx1inventory/8b3df5b0-d643-46a6-9faf-b4ea0160719b",
+ "ProductCategory": "Small Boats",
+ "Msrp": 3999,
+ "MainPhone": "(256) 389-8150"
+}

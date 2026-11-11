@@ -26,6 +26,10 @@ const config = {
   source: {
     // The Florence store's own DX1 website. Its sitemap enumerates Florence unit pages.
     baseUrl: env('SOURCE_BASE_URL', 'https://www.shoalsoutdoorsportsflorence.com'),
+    // 'search' = dealer-site inventory search (same source Torque uses; ~5 requests per sync).
+    // 'pages'  = sitemap + one page per unit (slow; gets challenged by the site's bot protection).
+    mode: env('SOURCE_MODE', 'search'),
+    searchConfigPath: env('SOURCE_SEARCH_PAGE', '/Inventory/All-Inventory-In-Stock'),
     sitemapPath: '/sitemap.xml',
     // The organization's main site is the one that prints "Available at: <location>" on every unit page
     // (the Florence site omits it), so each unit is verified there by its stable GUID path.
@@ -37,7 +41,7 @@ const config = {
     requestDelayMs: num('SYNC_REQUEST_DELAY_MS', 10000),  // one request at a time; 10s = the crawl-delay the source's robots.txt sets for crawlers
     maxPagesPerRun: num('SYNC_MAX_PAGES_PER_RUN', 240),    // bounded runs; unfinished work resumes next run
     challengeCooldownMinutes: num('SYNC_CHALLENGE_COOLDOWN_MINUTES', 45),
-    intervalMinutes: num('SYNC_INTERVAL_MINUTES', 45),    // target cadence 30–60 min
+    intervalMinutes: num('SYNC_INTERVAL_MINUTES', 30),    // target cadence 30–60 min
     recheckOthersHours: num('SYNC_RECHECK_OTHERS_HOURS', 24), // non-Florence / catalog pages rotate slower
     maxOthersPerRun: num('SYNC_MAX_OTHERS_PER_RUN', 40),
     staleAfterMinutes: num('SYNC_STALE_AFTER_MINUTES', 180),  // show "being re-verified" after this

@@ -69,9 +69,17 @@ The engine never attempts to solve or evade a challenge. It therefore:
 
 Consequences: the first full pass takes a few hours; steady-state freshness is ~45–60 min **if** the WAF tolerates it. If challenges recur, listings go stale → flagged → hidden after 24 h. That is the safe failure, but it is why option 1 is the real answer.
 
-### Not used
+### 3. Dealer-site inventory search — implemented, default mode, NOT yet tested live
 
-* **Algolia with the page-embedded key** — technically the richest source (it has a `DealershipId` facet), but the key is issued to DX1's own widget, expires hourly, and using it from another service is not an authorized integration.
+`SOURCE_MODE=search` (`src/sync/search.js`). This is the mechanism Torque CRM's Inventory screen already uses: read one dealer inventory page to get the site's search-only key (scoped to this dealer's unsold units, renewed hourly), then query the site's inventory index. About 5 requests return every unit, each with `DealershipName`.
+
+* Every record passes the same Florence gate: `DealershipName` must equal the Florence name and any dealership id in its photo paths must be the Florence id; otherwise it is excluded or quarantined.
+* A unit that leaves the index is hidden on the next sync. Incomplete reads and suspicious drops are refused.
+* Covered by automated tests using a real sample record from Torque's repository. **A live run from the build environment was not permitted, so the first real sync must be watched** (Admin → Run sync now → check counts, locations and a few prices against the dealership site).
+* Caveat: the key is issued for the dealership's own website search. It is public and read-only, but using it from another service is not a formal agreement — get the dealership's OK, as with photos.
+* Not confirmed until that first run: whether this index includes manufacturer catalog entries (they would be quarantined for lacking a stock number), and how rich the spec/description fields are compared with unit pages.
+
+Set `SOURCE_MODE=pages` to fall back to option 2.
 
 ## Before production
 

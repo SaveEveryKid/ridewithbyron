@@ -130,6 +130,16 @@ async function runSync(opts = {}) {
   };
 
   try {
+    if (!process.env.INVENTORY_FEED_URL && config.source.mode === 'search') {
+      const search = require('./search');
+      let units;
+      try { units = await search.fetchAll(opts.fetchImpl); } catch (e) { if (e instanceof search.SourceChallenge) throw new ChallengeError(e.message); throw e; }
+      // Rows left over from page-by-page discovery are meaningless in this mode.
+      db.prepare("DELETE FROM units WHERE status IN ('pending','catalog')").run();
+      await runFeed(opts, log, stats, { units, classify: search.classifySearchUnit, label: 'dealer search' });
+      if (stats.errors) { status = 'partial'; message = `${stats.errors} record(s) rejected`; } else message = `Dealer search applied: ${stats.fetched} records`;
+      return { status, message, runId, ...stats };
+    }
     if (process.env.INVENTORY_FEED_URL) { await runFeed(opts, log, stats); if (stats.errors) { status = 'partial'; message = `${stats.errors} feed record(s) rejected`; } else message = `Feed applied: ${stats.fetched} records`; return { status, message, runId, ...stats }; }
     // 1) Discovery
     // The source's WAF occasionally challenges the sitemap. We back off once and ask again later;
@@ -253,9 +263,11 @@ async function runSync(opts = {}) {
 }
 
 /** Authorized-feed mode: the feed is the full truth, so anything absent from a good feed is removed. */
-async function runFeed(opts, log, stats) {
-  const { fetchFeed, classifyFeedUnit } = require('./feed');
-  const units = await fetchFeed(opts.fetchImpl);
+async function runFeed(opts, log, stats, given) {
+  const { fetchFeed, classifyFeedUnit: feedClassify } = require('./feed');
+  const classifyFeedUnit = given ? given.classify : feedClassify;
+  const label = given ? given.label : 'authorized feed';
+  const units = given ? given.units : await fetchFeed(opts.fetchImpl);
   if (!units.length) throw new Error('Feed returned zero units — refusing to clear inventory');
   const prev = db.prepare("SELECT COUNT(*) n FROM units WHERE status='active'").get().n;
   const known = new Map(db.prepare('SELECT * FROM units').all().map((u) => [u.guid, u]));
@@ -273,10 +285,10 @@ async function runFeed(opts, log, stats) {
   }
   for (const [guid, row] of known) {
     if (seen.has(guid) || !['active', 'quarantined', 'unavailable'].includes(row.status)) continue;
-    if (row.status === 'active') { stats.removed++; log('info', `Removed (absent from feed): ${row.title} #${row.stock_number}`, guid); }
-    db.prepare("UPDATE units SET status='removed', status_reason='Absent from authorized feed', last_checked=?, last_changed=? WHERE guid=?").run(now(), now(), guid);
+    if (row.status === 'active') { stats.removed++; log('info', `Removed (no longer listed): ${row.title} #${row.stock_number}`, guid); }
+    db.prepare("UPDATE units SET status='removed', status_reason='No longer listed by the source', last_checked=?, last_changed=? WHERE guid=?").run(now(), now(), guid);
   }
-  log('info', `Feed applied: ${units.length} records, ${nextActive} verified Florence in stock.`);
+  log('info', `${label}: ${units.length} records read, ${nextActive} verified Florence in stock.`);
 }
 
 /** Freshness snapshot used by the public site and the admin dashboard. */

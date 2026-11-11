@@ -38,6 +38,7 @@ visitor form ──► POST /lead ──► leads table (outbox) ──► Torqu
 
 | Integration | Status |
 |---|---|
+| Florence inventory via the dealer site's search (same source as Torque) | **Built and unit-tested; not yet run live** — default mode, watch the first sync |
 | Florence inventory via public dealership pages | **Working, tested live** — but rate-limited by the dealership's bot protection; see `docs/INVENTORY-SOURCE.md` |
 | Authorized inventory feed | **Not connected** — needs the dealership/DX1 to issue one |
 | Torque CRM | **Not connected** — needs endpoint + credentials; see `docs/TORQUE-INTEGRATION.md` |

@@ -11,6 +11,7 @@ process.env.SYNC_REQUEST_DELAY_MS = '0';
 process.env.SYNC_CHALLENGE_BACKOFF_MS = '0';
 process.env.SESSION_SECRET = 'test-secret';
 process.env.SYNC_ENABLED = 'false';
+process.env.SOURCE_MODE = 'pages'; // page-mode engine tests; search mode is tested through its own functions below
 delete process.env.INVENTORY_FEED_URL;
 
 const config = require('../src/config');
@@ -267,4 +268,56 @@ test('authorized-feed records require both location fields', () => {
   assert.equal(classifyFeedUnit(mapFeedUnit({ ...rec, DealershipId: undefined })).status, 'quarantined');
   assert.equal(classifyFeedUnit(mapFeedUnit({ ...rec, DealershipName: undefined })).status, 'quarantined');
   assert.equal(classifyFeedUnit(mapFeedUnit({ ...rec, DateSold: '2026-11-01' })).status, 'unavailable');
+});
+
+test('dealer-search records: Florence gate applies to every hit', () => {
+  const { mapHit, classifySearchUnit, parseSearchConfig } = require('../src/sync/search');
+  const tusc = JSON.parse(fx('search-hit-tuscumbia.json'));
+  const t = mapHit(tusc);
+  assert.equal(t.stockNumber, 'H4513A');
+  assert.equal(t.price, 3999);
+  assert.equal(t.evidence.locationName, 'Shoals Outdoor Sports - Tuscumbia');
+  assert.equal(classifySearchUnit(t).status, 'other_location');
+  const F = config.source.florenceDealershipId;
+  const flo = JSON.parse(JSON.stringify(tusc).replaceAll('06fcbe5c-a659-49e3-93ff-b006014cc892', F));
+  flo.DealershipName = 'Shoals Outdoor Sports - Florence';
+  assert.equal(classifySearchUnit(mapHit(flo)).status, 'active');
+  assert.equal(classifySearchUnit(mapHit({ ...flo, DealershipName: 'Shoals Outdoor Sports - Tuscumbia' })).status, 'quarantined', 'name vs photo-id conflict');
+  assert.equal(classifySearchUnit(mapHit({ ...tusc, DealershipName: 'Shoals Outdoor Sports - Florence' })).status, 'quarantined', 'Florence name with another store photo id');
+  assert.equal(classifySearchUnit(mapHit({ ...flo, DealershipName: undefined })).status, 'quarantined');
+  assert.equal(classifySearchUnit(mapHit({ ...flo, StockNumber: '' })).status, 'quarantined');
+  assert.equal(classifySearchUnit(mapHit({ ...flo, objectID: 'not-a-guid' })).status, 'quarantined');
+  const sale = mapHit({ ...flo, Price: 5000, SalePrice: 4500, Msrp: 5200 });
+  assert.deepEqual([sale.price, sale.msrp, sale.onSale], [4500, 5000, true]);
+  assert.equal(mapHit({ ...flo, Price: 0, SalePrice: 0, Msrp: 0 }).price, null, 'no price is never invented');
+  assert.throws(() => parseSearchConfig('<html>no config</html>'));
+  assert.equal(parseSearchConfig(fx('florence-instock-boat.html')).appId, 'RBG3H22Y5V');
+});
+
+test('search-mode sync: lists Florence only, removes units that leave the index, refuses partial reads', async () => {
+  const { db: d } = require('../src/db');
+  d.exec('DELETE FROM units; DELETE FROM overrides;');
+  config.source.mode = 'search';
+  const F = config.source.florenceDealershipId;
+  const tusc = JSON.parse(fx('search-hit-tuscumbia.json'));
+  const mk = (id, stock) => { const h = JSON.parse(JSON.stringify(tusc).replaceAll('06fcbe5c-a659-49e3-93ff-b006014cc892', F)); h.objectID = id; h.StockNumber = stock; h.DealershipName = 'Shoals Outdoor Sports - Florence'; return h; };
+  const A = 'aaaaaaaa-0000-0000-0000-000000000001', B = 'aaaaaaaa-0000-0000-0000-000000000002';
+  const page = fx('florence-instock-boat.html');
+  const source = (hits, nbHits) => async (u) => (u.includes('algolia.net')
+    ? { ok: true, status: 200, json: async () => ({ hits, nbHits: nbHits ?? hits.length, nbPages: 1 }) }
+    : { ok: true, status: 200, url: u, text: async () => page });
+  let r = await runSync({ trigger: 'test', fetchImpl: source([mk(A, 'S1'), mk(B, 'S2'), tusc]) });
+  assert.equal(r.status, 'success');
+  assert.deepEqual(inv.allPublic().map((u) => u.stock_number).sort(), ['S1', 'S2']);
+  r = await runSync({ trigger: 'test', fetchImpl: source([mk(A, 'S1'), tusc]) });
+  assert.equal(r.removed, 1);
+  assert.deepEqual(inv.allPublic().map((u) => u.stock_number), ['S1']);
+  r = await runSync({ trigger: 'test', fetchImpl: source([tusc], 300) });
+  assert.equal(r.status, 'failed', 'incomplete read is not applied');
+  assert.deepEqual(inv.allPublic().map((u) => u.stock_number), ['S1']);
+  r = await runSync({ trigger: 'test', fetchImpl: async (u) => ({ ok: false, status: 403, url: u, text: async () => '<title>Azure WAF</title>' }) });
+  assert.equal(r.status, 'blocked');
+  assert.deepEqual(inv.allPublic().map((u) => u.stock_number), ['S1'], 'challenge keeps verified data');
+  setSetting('sync_blocked_until', null);
+  config.source.mode = 'pages';
 });
