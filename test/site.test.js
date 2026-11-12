@@ -398,3 +398,25 @@ test('model details: one page per model, shared across its units; a dealer note 
   await runDetails({ max: 5, pauseMs: 0, fetchImpl: async () => { n++; return { status: 200, text: async () => '' }; } });
   assert.equal(n, 0);
 });
+
+test('the dealer page is not re-read while its search key is still good; a refused key is replaced once', async () => {
+  await q.run('DELETE FROM units'); await setSetting('sync_blocked_until', null);
+  const key = (mins) => btoa(`${'0'.repeat(64)}validUntil=${Math.floor(Date.now() / 1000) + mins * 60}`);
+  const page = (mins) => PAGE.replace(/"apiKey":"[^"]+"/, `"apiKey":"${key(mins)}"`);
+  const calls = { page: 0, search: 0 };
+  const src = (mins, searchOk = () => true) => async (u) => {
+    if (String(u).includes('algolia.net')) { calls.search++; return searchOk() ? { ok: true, status: 200, json: async () => ({ hits: [florence(A, 'S1')], nbHits: 1, nbPages: 1 }) } : { ok: false, status: 403, json: async () => ({}) }; }
+    calls.page++; return { ok: true, status: 200, url: u, text: async () => page(mins) };
+  };
+  await setSetting('search_config', null);
+  assert.equal((await sync(src(60))).status, 'success');
+  assert.equal(calls.page, 1);
+  assert.equal((await sync(src(60))).status, 'success');
+  assert.equal(calls.page, 1, 'second sync reused the key');
+  let first = true;
+  assert.equal((await sync(src(60, () => { const ok = !first; first = false; return ok; }))).status, 'success');
+  assert.equal(calls.page, 2, 'a refused key is fetched again, once');
+  await setSetting('search_config', { ...(await q.get("SELECT value FROM settings WHERE key='search_config'")) && JSON.parse((await q.get("SELECT value FROM settings WHERE key='search_config'")).value), validUntil: Math.floor(Date.now() / 1000) + 60 });
+  await sync(src(60));
+  assert.equal(calls.page, 3, 'a key about to expire is replaced');
+});

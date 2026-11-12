@@ -9,6 +9,7 @@
 // Florence name AND any dealership id embedded in its photo paths must be the Florence id.
 import { config } from '../config.js';
 import { classifyUnit, isChallengePage } from './gate.js';
+import { getSetting, setSetting } from '../db.js';
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const str = (v) => (typeof v === 'string' ? v.trim() || null : typeof v === 'number' ? String(v) : null);
@@ -23,7 +24,10 @@ function parseSearchConfig(html) {
   if (!m) throw new Error("Search configuration not found on the dealer page (the site may have changed)");
   const c = JSON.parse(m[1]);
   if (!c.appId || !c.apiKey || !/^[A-Za-z0-9]+$/.test(c.appId)) throw new Error('Dealer page has no usable search key');
-  return { appId: c.appId, apiKey: c.apiKey, index: c.defaultIndexName || 'prod_WebSellable', pageDealershipId: String(c.dealershipId || '').toLowerCase() };
+  // The key says when it stops working (seconds since 1970); 0 = unknown.
+  let validUntil = 0;
+  try { validUntil = Number((/validUntil=(\d+)/.exec(atob(c.apiKey)) || [])[1] || 0); } catch { /* not base64 */ }
+  return { appId: c.appId, apiKey: c.apiKey, index: c.defaultIndexName || 'prod_WebSellable', pageDealershipId: String(c.dealershipId || '').toLowerCase(), validUntil };
 }
 
 function specGroups(raw) {
@@ -94,12 +98,22 @@ async function fetchAll(fetchImpl = fetch) {
     if (r.status !== 200) throw new Error(`Dealer page returned HTTP ${r.status}`);
     return parseSearchConfig(body);
   };
-  let cfg;
-  try { cfg = await getPage(); } catch (e) {
-    if (!(e instanceof SourceChallenge)) throw e;
-    await new Promise((r) => setTimeout(r, config.source.challengeBackoffMs)); // one polite retry, never a workaround
-    cfg = await getPage();
-  }
+  const freshPage = async () => {
+    let c;
+    try { c = await getPage(); } catch (e) {
+      if (!(e instanceof SourceChallenge)) throw e;
+      await new Promise((r) => setTimeout(r, config.source.challengeBackoffMs)); // one polite retry, never a workaround
+      c = await getPage();
+    }
+    await setSetting('search_config', c);
+    return c;
+  };
+  // The site's key lasts about an hour, so it is reused until shortly before it runs out:
+  // the dealer page is read every other sync instead of every sync.
+  const saved = getSetting('search_config', null);
+  const usable = saved && saved.apiKey && saved.validUntil && saved.validUntil * 1000 - Date.now() > 4 * 60000;
+  let cfg = usable ? saved : await freshPage();
+  let reused = !!usable;
   const hits = [];
   let total = 0;
   for (let page = 0; page < 15; page++) {
@@ -109,6 +123,7 @@ async function fetchAll(fetchImpl = fetch) {
       headers: { 'X-Algolia-Application-Id': cfg.appId, 'X-Algolia-API-Key': cfg.apiKey, 'Content-Type': 'application/json', 'User-Agent': config.source.userAgent },
       body: JSON.stringify({ params: params.toString() }),
     });
+    if (!r.ok && reused && page === 0) { cfg = await freshPage(); reused = false; page = -1; continue; } // the saved key was refused: get a new one, once
     if (!r.ok) throw new Error(`Inventory search returned HTTP ${r.status}`);
     const body = await r.json();
     hits.push(...(body.hits || []));
