@@ -60,7 +60,8 @@ function mapHit(h) {
     title: [year, make, model].filter(Boolean).join(' ') || null, year, make, model,
     condition: h.IsUsed === true || /used/i.test(String(h.Condition || '')) ? 'Used' : 'New',
     stockNumber: str(h.StockNumber), vin: str(h.Vin), vinLabel: str(h.Vin) ? (/boat|watercraft|pontoon/i.test(String(h.ProductType || '')) ? 'HIN' : 'VIN') : null,
-    category: str(h.ProductType), modelType: str(h.ProductCategory), modelCode: null, color: str(h.Color),
+    // Live data: ProductCategory is the broad group ("Utility Vehicles"), ProductType the subtype ("Crew Cab").
+    category: str(h.ProductCategory), modelType: str(h.ProductType), modelCode: null, color: str(h.Color),
     price: price || null, msrp: was && price && was > price ? was : (price ? null : msrpRaw), onSale: !!(sale && listed && sale < listed),
     priceLabel: null, priceNote: null, promoBanner: null, payment: null,
     headline: null, description: str(h.Description) || str(h.Comments) || null,

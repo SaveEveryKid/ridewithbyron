@@ -16,25 +16,26 @@ const POLARIS_FAMILIES = [
 const YOUTH = /\b(outlaw\s*(70|110)|sportsman\s*110|rzr\s*200|ranger\s*150|youth)\b/i;
 
 function vehicleType(u) {
-  const cat = (u.category || '').toLowerCase();
-  const mt = (u.modelType || '').toLowerCase();
+  // Looks at the category and the subtype together, so it works whichever field carries which.
+  const both = `${u.category || ''} | ${u.modelType || ''}`.toLowerCase();
   const model = (u.model || '').toLowerCase();
-  if (/pontoon|tritoon/.test(mt) || /pontoon/.test(cat) || /pontoon/.test(model)) return 'Pontoons';
-  if (/boat/.test(cat)) return 'Boats';
-  if (/watercraft|pwc/.test(cat)) return 'Personal Watercraft';
-  if (/utility vehicle|side.by.side|utv/.test(cat)) return 'Side-by-Sides';
-  if (/atv/.test(cat)) return 'ATVs';
-  if (/trailer/.test(cat)) return 'Trailers';
-  if (/mower|lawn/.test(cat)) return 'Mowers';
-  if (/motorcycle|scooter/.test(cat)) return 'Motorcycles';
-  if (/golf/.test(cat)) return 'Golf Carts';
-  if (/engine|motor/.test(cat)) return 'Outboard Motors';
-  return u.category || 'Other';
+  if (/pontoon|tritoon/.test(both) || /pontoon/.test(model)) return 'Pontoons';
+  if (/\bengines?\b|outboard motors?\b/.test(both)) return 'Outboard Motors';
+  if (/watercraft|pwc/.test(both)) return 'Personal Watercraft';
+  if (/\batvs?\b/.test(both)) return 'ATVs';
+  if (/utility vehicle|side.by.side|\butvs?\b/.test(both)) return 'Side-by-Sides';
+  if (/boat/.test(both)) return 'Boats';
+  if (/trailer/.test(both)) return 'Trailers';
+  if (/mower|lawn|zero turn/.test(both)) return 'Mowers';
+  if (/motorcycle|scooter|motocross/.test(both)) return 'Motorcycles';
+  if (/golf/.test(both)) return 'Golf Carts';
+  if (/snowmobile/.test(both)) return 'Snowmobiles';
+  return 'Other';
 }
 
 function family(u) {
   if (/polaris/i.test(u.make || '')) {
-    if (YOUTH.test(u.model || '')) return 'Youth';
+    if (YOUTH.test(u.model || '') || /\byouth\b/i.test(u.modelType || '')) return 'Youth';
     for (const [name, re] of POLARIS_FAMILIES) if (re.test(u.model || '')) return name;
   }
   return null;

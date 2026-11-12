@@ -299,3 +299,102 @@ test('scheduled trigger runs without throwing when the source is unreachable', a
   assert.equal(getSetting('last_sync_attempt').status, 'failed');
   assert.deepEqual(await stocks(), ['S1', 'S3'], 'inventory untouched');
 });
+
+// ---------------- vehicle types and model details (specs from dealer unit pages)
+import { vehicleType, family } from '../src/sync/taxonomy.js';
+import { parseDetails, runDetails, detailsProgress } from '../src/sync/details.js';
+
+test('vehicle types come out right for the category/subtype pairs the live inventory really has', () => {
+  const t = (category, modelType, make = 'Polaris', model = '') => vehicleType({ category, modelType, make, model });
+  assert.equal(t('Utility Vehicles', 'Regular Cab'), 'Side-by-Sides');
+  assert.equal(t('Utility Vehicles', 'Crew Cab'), 'Side-by-Sides');
+  assert.equal(t('Utility Vehicles', 'RZR XP 4'), 'Side-by-Sides');
+  assert.equal(t('Utility Vehicles', 'Youth'), 'Side-by-Sides');
+  assert.equal(t('ATVs', 'ATV: Full-Size Utility'), 'ATVs');
+  assert.equal(t('ATVs', 'Youth'), 'ATVs');
+  assert.equal(t('Utility Vehicles', 'ATV: Youth', 'TRACKER', 'TRACKER 90 ATV'), 'ATVs', 'the subtype settles a mislabelled category');
+  assert.equal(t('Power Boats Outboard', 'Pontoon Boats', 'Bennington'), 'Pontoons');
+  assert.equal(t('Power Boats Outboard', 'Bass Boats', 'Nitro'), 'Boats');
+  assert.equal(t('Power Boats Inboard', 'Runabouts', 'Larson'), 'Boats');
+  assert.equal(t('Boat Engines', 'FourStroke 60-115', 'Mercury Marine'), 'Outboard Motors');
+  assert.equal(t('Trailers', 'Utility Trailers', 'GREY STATES'), 'Trailers');
+  assert.equal(t('Lawn Mowers - Riding', 'ZERO TURN UNDER $5K', 'Cub Cadet'), 'Mowers');
+  assert.equal(t('Motorcycles', 'Motocross', 'Honda'), 'Motorcycles');
+  assert.equal(t('Something New', 'Whatever'), 'Other', 'a raw subtype is never shown as a shopping category');
+  assert.equal(family({ make: 'Polaris', model: 'RZR 200 EFI', modelType: 'Youth' }), 'Youth');
+  assert.equal(family({ make: 'Polaris', model: 'Ranger Crew 1000', modelType: 'Crew Cab' }), 'Ranger');
+  assert.equal(family({ make: 'Polaris', model: 'Polaris XPEDITION ADV 5 NorthStar', modelType: 'XPEDITION CREW CAB' }), 'XPEDITION');
+  assert.equal(family({ make: 'Kawasaki', model: 'Teryx4 LE', modelType: 'Crew Cab' }), null);
+  // The record shape the search really returns: broad group in ProductCategory, subtype in ProductType.
+  const u = mapHit(florence(A, 'S1', { Manufacturer: 'Polaris', ProductName: 'Ranger Crew 1000', ProductCategory: 'Utility Vehicles', ProductType: 'Crew Cab' }));
+  assert.deepEqual([u.category, u.modelType, vehicleType(u)], ['Utility Vehicles', 'Crew Cab', 'Side-by-Sides']);
+});
+
+test('dealer unit pages are read accurately for specs, features and description', () => {
+  const r = parseDetails(fx('unit-page-ranger.html'));
+  assert.deepEqual(r.specs.map((g) => g.group), ['General Information', 'Brakes/Wheels/Tires', 'Dimensions', 'Drivetrain', 'Electrical', 'Engine', 'Operational', 'Other']);
+  assert.deepEqual(r.features.map((g) => [g.group, g.items.length]), [['Capability', 6], ['Comfort', 6], ['Durability', 6], ['Upgrade To Northstar Ultimate', 3]]);
+  assert.deepEqual([r.keySpecs.seats, r.keySpecs.horsepower, r.keySpecs.displacement, r.keySpecs.groundClearance], [6, '82 hp', '999 cc', '14 in. (36 cm)']);
+  assert.match(r.description, /^Delivers more power/);
+  assert.ok(r.specs.flatMap((g) => g.rows).every(([k, v]) => k && v && !/[<>]/.test(k + v)), 'no markup leaks into values');
+  const p = parseDetails(fx('unit-page-pontoon.html'));
+  assert.equal(p.features.length, 0);
+  assert.equal(p.keySpecs.seats, null, 'a spec the page does not state stays empty');
+  assert.match(p.description, /MERCURY 60 ELPT/);
+  assert.deepEqual(parseDetails('<html><body>nothing here</body></html>'), { ...parseDetails(''), });
+  assert.equal(parseDetails('').specs.length, 0);
+});
+
+test('model details: one page per model, shared across its units; a dealer note stays on its own unit; a challenge stops the job', async () => {
+  await q.run('DELETE FROM units'); await q.run('DELETE FROM overrides'); await q.run('DELETE FROM model_details');
+  const R1 = 'cccccccc-0000-0000-0000-000000000001', R2 = 'cccccccc-0000-0000-0000-000000000002', P1 = 'dddddddd-0000-0000-0000-000000000001', P2 = 'dddddddd-0000-0000-0000-000000000002';
+  const ranger = (id, stock) => florence(id, stock, { Year: 2026, Manufacturer: 'Polaris', ProductName: 'Ranger Crew XP 1000 NorthStar Edition Ultimate', ProductCategory: 'Utility Vehicles', ProductType: 'Crew Cab', ShowroomUrl: `https://www.shoalsoutdoorsportsflorence.com/dx1inventory/${id}` });
+  const pontoon = (id, stock) => florence(id, stock, { Year: 2026, Manufacturer: 'Bennington', ProductName: '20 S 4PT FISHING', ProductCategory: 'Power Boats Outboard', ProductType: 'Pontoon Boats', ShowroomUrl: `https://www.shoalsoutdoorsportsflorence.com/dx1inventory/${id}` });
+  assert.equal((await sync(source([ranger(R1, 'R1'), ranger(R2, 'R2'), pontoon(P1, 'P1'), pontoon(P2, 'P2')]))).status, 'success');
+  assert.equal((await inv.search(inv.parseFilters({ seats: '6' }))).total, 0, 'no specs yet');
+  assert.deepEqual(await detailsProgress(), { models: 2, have: 0, blockedUntil: null });
+
+  const calls = [];
+  const pages = async (u) => { calls.push(u); return { status: 200, text: async () => (/cccccccc/.test(u) ? fx('unit-page-ranger.html') : fx('unit-page-pontoon.html')) }; };
+  const r = await runDetails({ max: 5, fetchImpl: pages, pauseMs: 0 });
+  assert.deepEqual([r.status, r.done], ['ok', 2]);
+  assert.equal(calls.length, 2, 'two models, two page reads — not four');
+  assert.equal((await runDetails({ max: 5, fetchImpl: pages, pauseMs: 0 })).tried, 0, 'nothing is fetched twice');
+
+  const [a, b] = [await inv.getByGuid(R1), await inv.getByGuid(R2)];
+  for (const u of [a, b]) {
+    assert.equal(u.seats, 6);
+    assert.equal(u.data.keySpecs.horsepower, '82 hp');
+    assert.equal(u.data.specs.length, 8);
+    assert.match(u.data.description, /^Delivers more power/, 'the manufacturer description is shared by the model');
+  }
+  assert.equal((await inv.search(inv.parseFilters({ seats: '6' }))).total, 2, 'seating filter now works');
+  assert.ok((await inv.facets()).seats.some((s) => s.value === 6 && s.n === 2));
+  const fetchedGuid = calls.find((u) => /dddddddd/.test(u)).match(/[0-9a-f-]{36}/)[0];
+  const [own, other] = [await inv.getByGuid(fetchedGuid), await inv.getByGuid(fetchedGuid === P1 ? P2 : P1)];
+  assert.match(own.data.description, /MERCURY 60 ELPT/);
+  assert.equal(other.data.description, null, 'one boat’s motor-and-trailer note is not copied onto another boat');
+  assert.equal(other.data.specs.length, 4, 'but the model’s specs are');
+  const html = await (await call(a.url)).text();
+  assert.match(html, /<h2>Specifications<\/h2>/);
+  assert.match(html, /82 hp/);
+  assert.match(html, /<li>6 seats<\/li>|Seating<\/dt><dd>6/);
+
+  // a new model arrives; the site answers with a challenge -> stop, and stay stopped
+  await sync(source([ranger(R1, 'R1'), ranger(R2, 'R2'), pontoon(P1, 'P1'), pontoon(P2, 'P2'), florence(C, 'S3', { Year: 2025, Manufacturer: 'Polaris', ProductName: 'RZR XP 1000', ShowroomUrl: `https://www.shoalsoutdoorsportsflorence.com/dx1inventory/${C}` })]));
+  const blocked = await runDetails({ max: 5, pauseMs: 0, fetchImpl: async () => ({ status: 403, text: async () => '<title>Azure WAF</title>' }) });
+  assert.equal(blocked.status, 'blocked');
+  await useDb(ENV.DB);
+  assert.equal((await runDetails({ max: 5, pauseMs: 0, fetchImpl: pages })).status, 'skipped');
+  await setSetting('details_blocked_until', null);
+  // a page that fails is retried later, not hammered; a foreign address is never fetched
+  let n = 0;
+  await runDetails({ max: 5, pauseMs: 0, fetchImpl: async () => { n++; return { status: 500, text: async () => 'oops' }; } });
+  await runDetails({ max: 5, pauseMs: 0, fetchImpl: async () => { n++; return { status: 500, text: async () => 'oops' }; } });
+  assert.equal(n, 1, 'a failed page waits a day before the next try');
+  await q.run("UPDATE units SET source_url='https://evil.example/x' WHERE guid=?", [C]);
+  await q.run('DELETE FROM model_details WHERE ok=0');
+  n = 0;
+  await runDetails({ max: 5, pauseMs: 0, fetchImpl: async () => { n++; return { status: 200, text: async () => '' }; } });
+  assert.equal(n, 0);
+});

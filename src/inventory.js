@@ -2,16 +2,34 @@
 import { config } from './config.js';
 import { q } from './db.js';
 import { slugify } from './sync/taxonomy.js';
+import { MODEL_KEY_SQL } from './sync/details.js';
 
 // Public = verified Florence + in stock on last check + verified recently + not hidden by admin.
 const PUBLIC_WHERE = `u.status='active' AND u.last_verified >= @hideCutoff AND COALESCE(o.hidden,0)=0`;
 const base = () => ({ hideCutoff: new Date(Date.now() - config.source.hideAfterHours * 3600e3).toISOString() });
-const SELECT = `SELECT u.*, COALESCE(o.featured,0) featured, o.badge, o.note FROM units u LEFT JOIN overrides o ON o.guid=u.guid`;
+// Model details (specs, features) are joined in by year|make|model; see sync/details.js.
+const JOINS = `FROM units u LEFT JOIN overrides o ON o.guid=u.guid LEFT JOIN model_details m ON m.k = ${MODEL_KEY_SQL} AND m.ok=1`;
+const SEATS = 'COALESCE(u.seats, m.seats)';
+const SELECT = `SELECT u.*, COALESCE(o.featured,0) featured, o.badge, o.note, m.data mdata, m.seats mseats ${JOINS}`;
 
 function hydrate(row) {
   if (!row) return null;
   let data = {};
   try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+  // Fill in what the inventory search doesn't carry, from the model's details page.
+  if (row.mdata) {
+    try {
+      const m = JSON.parse(row.mdata);
+      if (!(data.specs || []).length) data.specs = m.specs || [];
+      if (!(data.features || []).length) data.features = m.features || [];
+      if (!(data.options || []).length) data.options = m.options || [];
+      const k = data.keySpecs || {};
+      data.keySpecs = { ...m.keySpecs, ...Object.fromEntries(Object.entries(k).filter(([, v]) => v != null)) };
+      // A manufacturer's description applies to every unit of the model; a dealer's note about one unit only to that unit.
+      if (!data.description && m.description && (m.shared || m.guid === row.guid)) data.description = m.description;
+    } catch { /* ignore a damaged details row */ }
+  }
+  row = { ...row, seats: row.seats ?? row.mseats ?? null, mdata: undefined };
   const staleCutoff = Date.now() - config.source.staleAfterMinutes * 60000;
   const images = data.images || [];
   return {
@@ -71,7 +89,7 @@ async function search(filters, { pageSize = 24 } = {}) {
   if (f.year) { where.push('u.year=@year'); p.year = f.year; }
   if (f.minPrice != null) { where.push('u.price >= @minPrice'); p.minPrice = f.minPrice; }
   if (f.maxPrice != null) { where.push('u.price <= @maxPrice'); p.maxPrice = f.maxPrice; }
-  if (f.seats) { where.push(f.seats >= 6 ? 'u.seats >= 6' : 'u.seats = @seats'); p.seats = f.seats; }
+  if (f.seats) { where.push(f.seats >= 6 ? `${SEATS} >= 6` : `${SEATS} = @seats`); if (f.seats < 6) p.seats = f.seats; }
   if (f.sale) where.push('u.on_sale=1');
   if (f.q) {
     f.q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6).forEach((tok, i) => {
@@ -89,7 +107,7 @@ async function search(filters, { pageSize = 24 } = {}) {
 
 /** Facet values + counts from what is actually in stock at Florence right now. */
 async function facets() {
-  const rows = await q.all(`SELECT u.make,u.family,u.vtype,u.condition,u.year,u.seats,u.price,u.model FROM units u LEFT JOIN overrides o ON o.guid=u.guid WHERE ${PUBLIC_WHERE}`, base());
+  const rows = await q.all(`SELECT u.make,u.family,u.vtype,u.condition,u.year,${SEATS} seats,u.price,u.model ${JOINS} WHERE ${PUBLIC_WHERE}`, base());
   const count = (key) => {
     const m = new Map();
     for (const r of rows) if (r[key] != null && r[key] !== '') m.set(r[key], (m.get(r[key]) || 0) + 1);

@@ -43,6 +43,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
   `CREATE TABLE IF NOT EXISTS error_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, scope TEXT, message TEXT, detail TEXT)`,
   `CREATE TABLE IF NOT EXISTS rate (k TEXT PRIMARY KEY, n INTEGER NOT NULL, exp INTEGER NOT NULL)`,
+  // Specs/features read from dealer unit pages, one row per year|make|model, shared by every unit of that model.
+  `CREATE TABLE IF NOT EXISTS model_details (k TEXT PRIMARY KEY, ok INTEGER DEFAULT 0, attempts INTEGER DEFAULT 0, fetched_at TEXT, seats INTEGER, source_url TEXT, data TEXT)`,
 ];
 
 let d1 = null;

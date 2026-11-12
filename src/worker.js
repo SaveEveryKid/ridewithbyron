@@ -12,6 +12,7 @@ import * as inv from './inventory.js';
 import * as leads from './leads.js';
 import * as sec from './security.js';
 import { runSync, syncHealth } from './sync/engine.js';
+import { runDetails } from './sync/details.js';
 import * as pages from './views/pages.js';
 import * as admin from './views/admin.js';
 import { LANDING, bySlug } from './seo.js';
@@ -266,5 +267,7 @@ export default {
     await useDb(env.DB);
     try { const r = await runSync({ trigger: 'schedule' }); console.log(`[sync] ${r.status}: ${r.message}`); } catch (e) { await logError('sync-scheduler', e); }
     try { await leads.runOutbox(); } catch (e) { await logError('outbox', e); }
+    // Specs and features for models that don't have them yet (a few dealer pages per run).
+    try { const d = await runDetails({ max: 4 }); if (d.status !== 'ok' || d.tried) console.log(`[details] ${d.status}: ${d.message || `${d.done}/${d.tried} models`}`); } catch (e) { await logError('details', e); }
   },
 };

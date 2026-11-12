@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { q as dbq, getSetting } from '../db.js';
 import { syncHealth } from '../sync/engine.js';
+import { detailsProgress } from '../sync/details.js';
 import { INTENTS } from '../leads.js';
 import { esc, money, layout, ago, content, logo } from './ui.js';
 
@@ -37,6 +38,7 @@ async function overview(csrf, flash) {
   const staleCut = new Date(Date.now() - config.source.staleAfterMinutes * 60000).toISOString();
   const stale = (await dbq.get("SELECT COUNT(*) n FROM units WHERE status='active' AND last_verified < ?", [staleCut])).n;
   const runs = (await dbq.all('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 8'));
+  const det = await detailsProgress();
   const quarantined = (await dbq.all("SELECT guid,title,stock_number,status_reason,location_name,source_url,last_checked FROM units WHERE status='quarantined' ORDER BY last_checked DESC LIMIT 50"));
   const since = (d) => new Date(Date.now() - d * 86400e3).toISOString();
   const leadCount = async (d, where = '1=1') => (await dbq.get(`SELECT COUNT(*) n FROM leads WHERE created_at >= ? AND ${where}`, [since(d)])).n;
@@ -60,6 +62,7 @@ ${cooling ? `<div class="notice bad">The dealership site returned an anti-bot ch
 <div class="stat"><b>${counts.other_location || 0}</b><span>Excluded: other locations</span></div>
 <div class="stat"><b>${counts.catalog || 0}</b><span>Excluded: catalog (not in stock)</span></div>
 <div class="stat"><b>${runs[0] && runs[0].source_count != null ? runs[0].source_count : '—'}</b><span>Records read on last sync</span></div>
+<div class="stat"><b>${det.have} / ${det.models}</b><span>Models with specs &amp; features${det.blockedUntil && new Date(det.blockedUntil) > new Date() ? '<br>paused until ' + esc(dt(det.blockedUntil)) : det.have < det.models ? '<br>filling in a few every 30 min' : ''}</span></div>
 <div class="stat"><b>${(counts.unavailable || 0) + (counts.removed || 0)}</b><span>Sold / removed (hidden)</span></div>
 
 </div>
