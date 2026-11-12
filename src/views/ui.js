@@ -72,7 +72,7 @@ function leadBtn(intent, label, cls = 'btn btn-primary', ctx = {}) {
 
 function availability(u) {
   if (u.stale) return `<span class="avail"><span class="dot warn"></span>Availability being re-verified — ask Byron</span>`;
-  return `<span class="avail"><span class="dot"></span>In stock at Florence · verified ${ago(u.last_verified)}</span>`;
+  return `<span class="avail"><span class="dot"></span>In stock · verified ${ago(u.last_verified)}</span>`;
 }
 function ago(iso) {
   if (!iso) return 'never';

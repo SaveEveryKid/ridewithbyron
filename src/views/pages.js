@@ -12,7 +12,7 @@ const qs = (obj) => { const p = new URLSearchParams(); for (const [k, v] of Obje
 
 function syncBanner() {
   const h = syncHealth();
-  if (!h.lastSuccess) return `<div class="notice">Florence inventory is being loaded from the dealership for the first time. Please <a href="/contact">contact Byron</a> for what’s on the lot right now.</div>`;
+  if (!h.lastSuccess) return `<div class="notice">Florence inventory is being loaded from the dealership for the first time. Please <a href="/contact">contact Byron</a> for what’s available right now.</div>`;
   if (h.stale) return `<div class="notice">Heads up: the dealership feed hasn’t been confirmed since ${esc(new Date(h.lastSuccess).toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' }))} CT. Listings may be out of date — please confirm availability with Byron.</div>`;
   return '';
 }
@@ -57,7 +57,7 @@ async function home() {
 <h1>Your next <em>adventure</em> starts here.</h1>
 <p>Find your next Ranger, RZR, ATV, side-by-side or boat with Byron Green at Shoals Outdoor Sports in Florence, Alabama.</p>
 <div class="hero-btns"><a class="btn btn-primary" href="/inventory">Shop Inventory</a>${textBtn('btn btn-white', 'Text Byron')}</div>
-<div class="hero-meta">${freshness()}${f.total ? `<span><b>${f.total}</b> units on the Florence lot</span>` : ''}${c.showNoFees ? '<span>Upfront pricing · <b>no dealer fees</b></span>' : ''}</div>
+<div class="hero-meta">${freshness()}${f.total ? `<span><b>${f.total}</b> units within reach</span>` : ''}${c.showNoFees ? '<span>Upfront pricing · <b>no dealer fees</b></span>' : ''}</div>
 </div></section>
 
 <div class="wrap">
@@ -71,7 +71,7 @@ async function home() {
 ${syncBanner()}
 </div>
 
-${tiles.length ? `<section class="sec"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">In stock in Florence</span><h2>Shop by <span>category</span></h2><div class="slash"></div></div><a href="/inventory">View all ${f.total} →</a></div>
+${tiles.length ? `<section class="sec"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">Within reach</span><h2>Shop by <span>category</span></h2><div class="slash"></div></div><a href="/inventory">View all ${f.total} →</a></div>
 <div class="cats">${tiles.map((t) => `<a class="cat" href="${esc(t.href)}"><i>${esc(t.kicker)}</i><b>${esc(t.name)}</b><span>${t.n} in stock</span></a>`).join('')}</div></div></section>` : ''}
 
 ${featured.length ? `<section class="sec sec-alt"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">Byron’s picks</span><h2>Featured <span>Florence</span> inventory</h2><div class="slash"></div></div><a href="/inventory">Shop all inventory →</a></div>
@@ -83,11 +83,11 @@ ${featured.length ? `<section class="sec sec-alt"><div class="wrap"><div class="
 <div><h3>Straightforward buying</h3><p>${c.showNoFees ? 'Shoals Outdoor Sports gives its best price up front, with no dealer fees. Byron walks you through the numbers line by line.' : 'Clear numbers explained line by line, so you know exactly what you’re paying for before you sign anything.'}</p></div>
 <div><h3>Real product knowledge</h3><p>More than a decade selling vehicles. Byron will help you match the machine to how you’ll actually use it — work, trail, hunting or the lake.</p></div>
 <div><h3>No pressure</h3><p>Ask as many questions as you want. If it’s not the right fit or the right time, that’s fine.</p></div>
-<div><h3>Real Florence inventory</h3><p>What you see here is on the Florence lot, re-checked against the dealership’s listings throughout the day.</p></div>
+<div><h3>Inventory within reach</h3><p>Every unit you see here is one Byron can get to easily, re-checked against the dealership’s listings throughout the day.</p></div>
 <div><h3>Backed by the dealership</h3><p>Every purchase is completed through Shoals Outdoor Sports, with its sales, finance, parts and service departments behind you.</p></div>
 </div></div></section>
 
-${latest.length ? `<section class="sec sec-alt"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">Fresh on the lot</span><h2>Latest <span>Florence</span> arrivals</h2><div class="slash"></div></div><a href="/inventory?sort=newest">See newest first →</a></div>
+${latest.length ? `<section class="sec sec-alt"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">Just listed</span><h2>Latest <span>Florence</span> arrivals</h2><div class="slash"></div></div><a href="/inventory?sort=newest">See newest first →</a></div>
 <div class="grid four">${latest.map((u) => card(u)).join('')}</div></div></section>` : ''}
 
 ${c.testimonials && c.testimonials.length ? `<section class="sec"><div class="wrap"><div class="sec-head"><div><span class="eyebrow">From customers</span><h2>What riders <span>say</span></h2><div class="slash"></div></div></div>
@@ -135,9 +135,9 @@ function resultsBlock(f, res, action) {
   const { page: _p, ...rest } = f;
   const link = (p) => action + qs({ ...rest, page: p });
   const pager = res.pages > 1 ? `<nav class="pager" aria-label="Pages">${res.page > 1 ? `<a href="${esc(link(res.page - 1))}" rel="prev">‹ Prev</a>` : ''}${Array.from({ length: res.pages }, (_, i) => i + 1).filter((p) => Math.abs(p - res.page) < 3 || p === 1 || p === res.pages).map((p) => (p === res.page ? `<span aria-current="page">${p}</span>` : `<a href="${esc(link(p))}">${p}</a>`)).join('')}${res.page < res.pages ? `<a href="${esc(link(res.page + 1))}" rel="next">Next ›</a>` : ''}</nav>` : '';
-  return `<div><div class="inv-bar"><div><b>${res.total}</b> <span class="muted">${res.total === 1 ? 'unit' : 'units'} in stock at Florence</span></div>
+  return `<div><div class="inv-bar"><div><b>${res.total}</b> <span class="muted">${res.total === 1 ? 'unit' : 'units'} in stock</span></div>
 <form method="get" action="${action}" data-autosubmit>${Object.entries(rest).filter(([k, v]) => k !== 'sort' && v !== '' && v != null && v !== false).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v === true ? '1' : v)}">`).join('')}<label class="sr" for="sort">Sort by</label><select id="sort" name="sort">${sortOpts.map(([v, l]) => `<option value="${v}"${f.sort === v ? ' selected' : ''}>${l}</option>`).join('')}</select><noscript><button class="btn btn-ghost btn-sm">Sort</button></noscript></form></div>
-${res.units.length ? `<div class="grid">${res.units.map((u, i) => card(u, { eager: i < 3 })).join('')}</div>${pager}` : `<div class="empty"><h3 style="margin-bottom:8px">Nothing on the Florence lot matches that right now</h3><p>Inventory changes daily, and Byron often knows what’s inbound before it’s listed.</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${leadBtn('availability', 'Ask Byron to find one', 'btn btn-primary')}<a class="btn btn-ghost" href="/inventory">See all inventory</a></div></div>`}</div>`;
+${res.units.length ? `<div class="grid">${res.units.map((u, i) => card(u, { eager: i < 3 })).join('')}</div>${pager}` : `<div class="empty"><h3 style="margin-bottom:8px">Nothing within reach matches that right now</h3><p>Inventory changes daily, and Byron often knows what’s inbound before it’s listed.</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${leadBtn('availability', 'Ask Byron to find one', 'btn btn-primary')}<a class="btn btn-ghost" href="/inventory">See all inventory</a></div></div>`}</div>`;
 }
 
 async function inventory(query) {
@@ -152,8 +152,8 @@ async function inventory(query) {
     // Filtered/sorted/paged views are not indexed; the clean landing pages and unit pages are.
     noindex: filtered || f.page > 1 || f.sort !== 'featured',
     title: `${bits ? bits + ' for Sale' : 'Powersports Inventory'} in Florence, AL | Ride With Byron`,
-    description: `Browse ${res.total} powersports units in stock at Shoals Outdoor Sports in Florence, Alabama. Filter by make, model, price and features, then contact Byron Green directly.`,
-    body: `<div class="page-head"><div class="wrap"><div class="crumbs"><a href="/">Home</a> / Inventory</div><h1>${esc(h1)}</h1><p class="lede">Only units assigned to the Florence store are shown. ${freshness()}</p></div></div>
+    description: `Browse ${res.total} powersports units available through Byron Green at Shoals Outdoor Sports in Florence, Alabama. Filter by make, model, price and features, then contact Byron directly.`,
+    body: `<div class="page-head"><div class="wrap"><div class="crumbs"><a href="/">Home</a> / Inventory</div><h1>${esc(h1)}</h1><p class="lede">Every unit here is within reach — Byron can get to it easily. ${freshness()}</p></div></div>
 <div class="wrap">${syncBanner()}<div class="inv">${filterForm(f, fac)}${resultsBlock(f, res, '/inventory')}</div></div>`,
   });
 }
@@ -182,7 +182,7 @@ async function unitPage(u) {
   const gallery = imgs.length ? `<div class="gal" data-gallery><div class="gal-main"><div class="gal-track" data-track tabindex="0" aria-label="Photo gallery">${imgs.map((src, i) => `<img src="${esc(i === 0 ? src : src.replace(/(\.\w+)$/, '_480px$1'))}" ${i === 0 ? 'fetchpriority="high"' : `data-full="${esc(src)}" loading="lazy"`} alt="${esc(u.title)} — photo ${i + 1} of ${imgs.length}" width="1200" height="900" decoding="async" data-ph>`).join('')}</div>
 ${imgs.length > 1 ? `<button class="gal-nav prev" data-prev aria-label="Previous photo">‹</button><button class="gal-nav next" data-next aria-label="Next photo">›</button><span class="gal-count"><span data-idx>1</span> / ${imgs.length}</span>` : ''}</div>
 ${imgs.length > 1 ? `<div class="thumbs">${imgs.map((src, i) => `<button data-go="${i}" aria-label="Photo ${i + 1}"${i === 0 ? ' aria-current="true"' : ''}><img src="${esc(src.replace(/(\.\w+)$/, '_480px$1'))}" alt="" loading="lazy" width="84" height="63"></button>`).join('')}</div>` : ''}</div>`
-    : '<div class="gal-main"><span class="noimg">Photos coming soon — text Byron and he’ll send pictures from the lot.</span></div>';
+    : '<div class="gal-main"><span class="noimg">Photos coming soon — text Byron and he’ll send pictures.</span></div>';
   const kv = [['Stock #', u.stock_number], ['Condition', u.condition === 'Used' ? 'Pre-owned' : u.condition], ['Year', u.year], ['Make', u.make], ['Model', u.model], ['Type', u.model_type || u.vtype], ['Color', u.color], [d.vinLabel || 'VIN', u.vin], ['Seating', u.seats ? `${u.seats}` : null], ['Engine', k.displacement && /\d/.test(k.displacement) ? k.displacement : null], ['Horsepower', k.horsepower && /\d/.test(k.horsepower) ? k.horsepower : null], ['Ground clearance', k.groundClearance], ['Towing', k.towing ? k.towing.split(' · ')[0] : null], ['Payload', k.payload], ['Bed / box capacity', k.bedCapacity]].filter(([, v]) => v);
   const ld = {
     '@context': 'https://schema.org', '@type': ['Product', 'Vehicle'], name: u.title, sku: u.stock_number, url: config.siteUrl + u.url,
@@ -215,7 +215,7 @@ ${d.payment ? `<p class="muted small" style="margin:6px 0 0">Dealer payment esti
 <div style="margin-top:10px">${ui.availability(u)}</div>
 <div class="buy-cta">${leadBtn('quote', 'Get My Best Quote', 'btn btn-primary wide', { unit: u })}${textBtn('btn btn-ghost', 'Text Byron', { unit: u })}${callBtn('btn btn-ghost', 'Call Byron', { unit: u })}${leadBtn('availability', 'Check Availability', 'btn btn-ghost', { unit: u })}${leadBtn('visit', 'Schedule a Visit', 'btn btn-ghost', { unit: u })}${leadBtn('financing', 'Ask About Financing', 'btn btn-ghost wide', { unit: u })}</div>
 <dl class="kv">${kv.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>
-<div class="at">${ui.ICON.pin.replace('<svg', '<svg width="20" height="20" style="flex:none;color:var(--blue-hi)"')}<div><b style="color:var(--text)">Located at ${esc(D.locationName)}</b><br>${esc(D.street)}, ${D.city}, ${D.region} ${D.zip}<br>Sold by Shoals Outdoor Sports. Your salesperson: Byron Green.</div></div>
+<div class="at">${ui.ICON.pin.replace('<svg', '<svg width="20" height="20" style="flex:none;color:var(--blue-hi)"')}<div><b style="color:var(--text)">Within reach — Byron can get to this unit easily</b><br>Sold by ${esc(D.locationName)}, ${esc(D.street)}, ${D.city}, ${D.region} ${D.zip}.<br>Your salesperson: Byron Green.</div></div>
 </aside></div>
 ${rel.length ? `<section class="sec" style="padding-top:20px"><div class="sec-head"><div><h2>Related <span>Florence</span> inventory</h2><div class="slash"></div></div></div><div class="grid four">${rel.map((r) => card(r)).join('')}</div></section>` : ''}
 </div>`;
@@ -223,7 +223,7 @@ ${rel.length ? `<section class="sec" style="padding-top:20px"><div class="sec-he
   return layout({
     path: u.url, canonical: u.url, unit: u, body, ogImage: imgs[0] || '',
     title: `${u.condition === 'Used' ? 'Used ' : ''}${u.title}${u.color ? ' ' + u.color : ''} for Sale in ${loc} | #${u.stock_number}`,
-    description: `${u.condition === 'Used' ? 'Pre-owned' : 'New'} ${u.title}${u.color ? ' in ' + u.color : ''}${u.price != null ? ' — ' + money(u.price) : ''}. Stock #${u.stock_number}, in stock at Shoals Outdoor Sports in Florence, AL. Text or call Byron Green for availability and your best quote.`,
+    description: `${u.condition === 'Used' ? 'Pre-owned' : 'New'} ${u.title}${u.color ? ' in ' + u.color : ''}${u.price != null ? ' — ' + money(u.price) : ''}. Stock #${u.stock_number}, available through Byron Green at Shoals Outdoor Sports in Florence, AL. Text or call Byron for availability and your best quote.`,
     head: jsonLd(ld) + jsonLd(crumbsLd),
   });
 }
@@ -244,14 +244,14 @@ function about() {
 <li><b>Personal service.</b> Same person from your first question to the day you load up.</li>
 <li><b>Straightforward buying.</b> Clear numbers, explained line by line, before you commit to anything.</li>
 <li><b>Product knowledge.</b> I’ll help you match the machine to how you’ll actually use it — and tell you when a less expensive one will do the job.</li>
-<li><b>Direct communication.</b> Text, call or email, whatever suits you. I’ll send photos and walk-arounds from the lot.</li>
+<li><b>Direct communication.</b> Text, call or email, whatever suits you. I’ll send photos and walk-arounds.</li>
 <li><b>No unnecessary pressure.</b> Take your time. Ask everything. If it isn’t right, it isn’t right.</li>
-<li><b>The Florence inventory.</b> Everything on this site is on the lot at Shoals Outdoor Sports in Florence.</li>
+<li><b>Inventory within reach.</b> Everything on this site is a unit I can get to easily.</li>
 </ul>
 ${c.aboutExtra ? `<p class="pre">${esc(c.aboutExtra)}</p>` : ''}
 <h2>Who you’re buying from</h2>
 <p>I’m a sales representative at <b>Shoals Outdoor Sports</b> in Florence, Alabama. I don’t own or operate the dealership, and RideWithByron.com isn’t a separate dealer. Every vehicle shown here belongs to Shoals Outdoor Sports, and every purchase — pricing, trade-ins, financing, paperwork and delivery — is completed through Shoals Outdoor Sports at ${esc(D.street)}, ${D.city}, ${D.region} ${D.zip}.</p>
-<p>This site just makes it easy to see what’s really in stock in Florence and to get hold of me directly.</p>
+<p>This site just makes it easy to see what’s within reach and to get hold of me directly.</p>
 </div>
 <div><div class="contact-card"><span class="eyebrow">Let’s find your ride</span><h2>Reach Byron directly</h2><div class="btns">${textBtn('btn btn-primary', 'Text Byron')}${callBtn('btn btn-ghost', 'Call Byron')}${leadBtn('quote', 'Get My Best Quote', 'btn btn-ghost')}${leadBtn('visit', 'Schedule a Visit', 'btn btn-ghost')}</div></div>
 <div class="map-card" style="margin-top:16px"><h3>${esc(D.locationName)}</h3><p style="margin:8px 0">${esc(D.street)}<br>${D.city}, ${D.region} ${D.zip}</p><a class="btn btn-ghost btn-sm" href="${D.mapsUrl}" target="_blank" rel="noopener">Get Directions</a> <a class="btn btn-primary btn-sm" href="/inventory">Shop Inventory</a></div></div>
@@ -307,7 +307,7 @@ function aboutSite() {
   return layout({
     path: '/about-this-site', canonical: '/about-this-site', title: 'About This Site & Inventory Data | RideWithByron.com', description: 'How RideWithByron.com keeps Florence inventory accurate.',
     body: `<div class="page-head"><div class="wrap"><h1>About this site</h1></div></div><div class="wrap sec prose">
-<p>RideWithByron.com shows inventory published by Shoals Outdoor Sports for its Florence, Alabama store. A unit appears here only when the dealership’s own listing states it is <b>available at Shoals Outdoor Sports – Florence</b> and <b>in stock</b>. Units at other Shoals Outdoor Sports locations are never shown.</p>
+<p>RideWithByron.com shows inventory published by Shoals Outdoor Sports for its Florence, Alabama store. A unit appears here only when the dealership lists it as <b>in stock</b> under its <b>Florence</b> store — the units Byron can get to easily. Units listed under other Shoals Outdoor Sports locations are not shown.</p>
 <p>Listings are re-checked about every ${config.source.intervalMinutes} minutes. Last successful check: <b>${h.lastSuccess ? esc(new Date(h.lastSuccess).toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'short' })) + ' CT' : 'not yet completed'}</b>. If the dealership’s site can’t be reached, listings are marked as needing re-verification and are hidden after ${config.source.hideAfterHours} hours.</p>
 <h2>Automated access</h2><p>Our inventory checker identifies itself as <code>RideWithByronInventorySync</code>, requests one page at a time with a pause between requests, follows robots.txt, and stops if the site asks it to. Site administrators with questions can <a href="/contact">contact Byron</a>.</p></div>`,
   });
