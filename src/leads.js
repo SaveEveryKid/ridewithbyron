@@ -140,8 +140,14 @@ async function deliverLead(id) {
   if (config.torque.signingSecret) headers['X-RWB-Signature'] = 'sha256=' + await hmacHex(config.torque.signingSecret, `${ts}.${raw}`);
   try {
     const text = await postJson(config.torque.webhookUrl, payload, headers);
-    let ref = null; try { const j = JSON.parse(text); ref = String(j.id || j.contact_id || j.lead_id || '').slice(0, 80) || null; } catch { /* non-JSON ack is fine */ }
-    await q.run("UPDATE leads SET crm_status='delivered', crm_delivered_at=?, crm_attempts=crm_attempts+1, crm_last_error=NULL, crm_ref=? WHERE id=?", [now(), ref, id]);
+    // Only a real receipt counts. A web page or an empty "200 OK" from the wrong address must never
+    // be mistaken for Torque accepting the lead.
+    let j = null; try { j = JSON.parse(text); } catch { /* not JSON */ }
+    if (!j || typeof j !== 'object' || !(j.ok === true || j.id || j.contact_id || j.lead_id)) throw new Error('Torque did not confirm the lead (unexpected reply — check TORQUE_WEBHOOK_URL)');
+    const ref = String(j.id || j.contact_id || j.lead_id || '').slice(0, 80) || null;
+    // Torque also reports whether it could text the alert to Byron's phone.
+    const alert = typeof j.alert === 'string' && j.alert !== 'sent' && j.alert !== 'off' ? `Delivered to Torque. Text alert: ${j.alert}`.slice(0, 300) : null;
+    await q.run("UPDATE leads SET crm_status='delivered', crm_delivered_at=?, crm_attempts=crm_attempts+1, crm_last_error=?, crm_ref=? WHERE id=?", [now(), alert, ref, id]);
   } catch (e) {
     const attempts = l.crm_attempts + 1;
     const delayMin = Math.min(360, 2 ** attempts); // 2,4,8 … capped at 6h; retried for ~3 days

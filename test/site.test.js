@@ -245,6 +245,13 @@ test('Torque delivery: signed, retried on failure, marked delivered on success',
     assert.deepEqual([l.crm_status, l.crm_attempts], ['pending', 1]);
     assert.match(l.crm_last_error, /500/);
     await q.run('UPDATE leads SET crm_next_attempt=NULL');
+    // A web page answering "200 OK" (wrong address) is not a receipt.
+    globalThis.fetch = async () => new Response('<!doctype html><title>Torque CRM</title>', { status: 200 });
+    await leads.runOutbox();
+    l = await q.get('SELECT crm_status, crm_attempts, crm_last_error FROM leads WHERE id=1');
+    assert.deepEqual([l.crm_status, l.crm_attempts], ['pending', 2]);
+    assert.match(l.crm_last_error, /did not confirm/);
+    await q.run('UPDATE leads SET crm_next_attempt=NULL');
     globalThis.fetch = async (url, init) => { seen.push({ url, init }); return new Response(JSON.stringify({ id: 'T-77' }), { status: 200 }); };
     await leads.runOutbox();
     l = await q.get('SELECT crm_status, crm_ref FROM leads WHERE id=1');
