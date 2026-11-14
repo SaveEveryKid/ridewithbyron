@@ -20,6 +20,7 @@ import { DEFAULT_CONTENT, reqState } from './views/ui.js';
 import * as community from './community/store.js';
 import { youtubeId } from './community/moderate.js';
 import { communityPage, topicPage, communityAdmin } from './views/community.js';
+import { COMMUNITY_JS } from './views/community-assets.js';
 
 const CSP = [
   "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'none'", "form-action 'self'",
@@ -177,6 +178,7 @@ async function communityRoutes(request, url, path, env, ctx) {
       const page = parseInt(url.searchParams.get('page'), 10) || 1;
       return html(request, communityPage({ videos: await community.listVideos(), list: await community.listTopics(page), name, flash, staff }));
     }
+    if (path === '/community/c.js') return text(request, COMMUNITY_JS, 'text/javascript; charset=utf-8', 200, { 'Cache-Control': 'public, max-age=3600' });
     const m = path.match(/^\/community\/t\/(\d{1,9})$/);
     if (m) {
       const t = await community.getTopic(Number(m[1]));

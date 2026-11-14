@@ -2,6 +2,9 @@
 // script it needs is the site's own. Everything visitors type is escaped before it is shown.
 import { config } from '../config.js';
 import { esc, layout, ago, jsonLd, reqState, logo } from './ui.js';
+import { COMMUNITY_CSS } from './community-assets.js';
+
+const STYLE = `<style>${COMMUNITY_CSS}</style>`;
 
 const RULES = [
   'Be friendly. This is for riders helping riders.',
@@ -26,7 +29,7 @@ function guard(lazy = false) {
   const check = !k ? '' : lazy ? `<div data-turnstile="${esc(k)}"></div>` : `<div class="cf-turnstile" data-sitekey="${esc(k)}" data-theme="dark" data-size="flexible"></div>`;
   return `<input type="hidden" name="_t" value="${reqState.formToken}"><div class="hp" aria-hidden="true"><label>Website<input name="company" tabindex="-1" autocomplete="off"></label></div>${check}`;
 }
-const turnstileScript = () => (config.turnstile.siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : '');
+const turnstileScript = () => (config.turnstile.siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script><script src="/community/c.js" defer></script>' : '');
 
 function postForm({ parentId = null, name = '', values = {}, errors = {}, isTopic = false, staff = false, lazy = false }) {
   const e = (k) => (errors[k] ? `<span class="err">${esc(errors[k])}</span>` : '');
@@ -94,6 +97,7 @@ ${pages > 1 ? `<nav class="pager" aria-label="Pages">${page > 1 ? `<a href="/com
     path: '/community', canonical: '/community', noindex: page > 1,
     title: 'Rider Community — Trails, Rides & Videos Around the Shoals | Ride With Byron',
     description: 'Ride videos from local riders and an open discussion board for ATV and side-by-side owners around Florence and the Shoals: places to ride, machines, and meeting up.',
+    head: STYLE,
     body,
   });
 }
@@ -126,7 +130,7 @@ ${flashBox(flash)}
 ${topic.locked ? '<div class="notice">This topic is closed to new replies.</div>' : `<section class="block" id="reply"><h2>Add a reply</h2>${postForm({ parentId: topic.id, name, values, errors, staff })}</section>`}
 <p style="margin:24px 0 50px"><a class="btn btn-ghost btn-sm" href="/community#talk">‹ All topics</a></p></div>${turnstileScript()}`;
   return layout({
-    path: '/community', canonical: `/community/t/${topic.id}`, head: jsonLd(ld),
+    path: '/community', canonical: `/community/t/${topic.id}`, head: STYLE + jsonLd(ld),
     title: `${topic.title} | Rider Community — Ride With Byron`.slice(0, 110),
     description: topic.body.replace(/\s+/g, ' ').slice(0, 155),
     body,

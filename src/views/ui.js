@@ -12,7 +12,7 @@ const money = (n) => (n == null ? null : '$' + Number(n).toLocaleString('en-US')
 const jsonLd = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 
 // Bump when public/css or public/js change, so browsers fetch the new files.
-const ver = '5';
+const ver = '3';
 
 const DEFAULT_CONTENT = {
   byronPhone: '',       // Byron's direct line, e.g. 256-555-0123. Until set, call/text buttons open the request form.
