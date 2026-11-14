@@ -17,7 +17,9 @@
   // Inventory sync + lead delivery retries, every 30 minutes.
   "triggers": { "crons": ["*/30 * * * *"] },
   // Cloudflare Workers AI: the safety check on community posts (holds hostile posts for review).
-  "ai": { "binding": "AI" }
+  "ai": { "binding": "AI" },
+  // The site's real address. The bare domain redirects to it, and it is what Google is told to index.
+  "vars": { "SITE_URL": "https://www.ridewithbyron.com" }
   // Secrets (Settings → Variables and Secrets): ADMIN_PASSWORD (required);
   // TORQUE_WEBHOOK_URL, TORQUE_API_KEY, TORQUE_SIGNING_SECRET, NOTIFY_WEBHOOK_URL (optional).
   // Plain variables (optional): SITE_URL, GA4_MEASUREMENT_ID, GOOGLE_ADS_ID, GOOGLE_ADS_LEAD_LABEL, META_PIXEL_ID, SYNC_ENABLED.
