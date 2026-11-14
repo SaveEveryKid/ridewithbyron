@@ -24,6 +24,8 @@ const base = () => ({
   torque: { webhookUrl: '', apiKey: '', signingSecret: '', assignee: 'Byron Green' },
   notifyWebhookUrl: '',
   analytics: { ga4: '', googleAds: '', googleAdsLeadLabel: '', metaPixel: '' },
+  // Cloudflare Turnstile (the invisible "are you human" check on community posts); optional.
+  turnstile: { siteKey: '', secret: '' },
   dealership: {
     name: 'Shoals Outdoor Sports',
     locationName: 'Shoals Outdoor Sports — Florence',
@@ -55,6 +57,7 @@ export function initConfig(env = {}, requestUrl) {
   src.feedToken = s('INVENTORY_FEED_TOKEN');
   config.torque = { webhookUrl: s('TORQUE_WEBHOOK_URL'), apiKey: s('TORQUE_API_KEY'), signingSecret: s('TORQUE_SIGNING_SECRET'), assignee: s('TORQUE_ASSIGNEE', 'Byron Green') };
   config.notifyWebhookUrl = s('NOTIFY_WEBHOOK_URL');
+  config.turnstile = { siteKey: s('TURNSTILE_SITE_KEY'), secret: s('TURNSTILE_SECRET') };
   config.analytics = { ga4: s('GA4_MEASUREMENT_ID'), googleAds: s('GOOGLE_ADS_ID'), googleAdsLeadLabel: s('GOOGLE_ADS_LEAD_LABEL'), metaPixel: s('META_PIXEL_ID') };
   return config;
 }

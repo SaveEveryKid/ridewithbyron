@@ -43,6 +43,18 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
   `CREATE TABLE IF NOT EXISTS error_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, scope TEXT, message TEXT, detail TEXT)`,
   `CREATE TABLE IF NOT EXISTS rate (k TEXT PRIMARY KEY, n INTEGER NOT NULL, exp INTEGER NOT NULL)`,
+  // Community page: ride videos, topics and replies (one table; a topic has no parent), reports, blocks, video submissions.
+  `CREATE TABLE IF NOT EXISTS community_videos (id INTEGER PRIMARY KEY AUTOINCREMENT, youtube_id TEXT NOT NULL, title TEXT, credit TEXT, created_at TEXT, hidden INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS community_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INTEGER, parent_id INTEGER, title TEXT, author TEXT NOT NULL, body TEXT NOT NULL,
+    created_at TEXT NOT NULL, status TEXT NOT NULL, hold_reason TEXT, visitor TEXT, ipk TEXT,
+    staff INTEGER DEFAULT 0, approved INTEGER DEFAULT 0, reports INTEGER DEFAULT 0, locked INTEGER DEFAULT 0, last_activity TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS community_posts_topic ON community_posts(topic_id, status)`,
+  `CREATE INDEX IF NOT EXISTS community_posts_visitor ON community_posts(visitor)`,
+  `CREATE TABLE IF NOT EXISTS community_reports (post_id INTEGER NOT NULL, visitor TEXT NOT NULL, at TEXT, PRIMARY KEY (post_id, visitor))`,
+  `CREATE TABLE IF NOT EXISTS community_blocks (who TEXT PRIMARY KEY, at TEXT, note TEXT)`,
+  `CREATE TABLE IF NOT EXISTS community_submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, name TEXT, contact TEXT, url TEXT, note TEXT, status TEXT)`,
   // Specs/features read from dealer unit pages, one row per year|make|model, shared by every unit of that model.
   `CREATE TABLE IF NOT EXISTS model_details (k TEXT PRIMARY KEY, ok INTEGER DEFAULT 0, attempts INTEGER DEFAULT 0, fetched_at TEXT, seats INTEGER, source_url TEXT, data TEXT)`,
 ];

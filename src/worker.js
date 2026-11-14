@@ -17,10 +17,15 @@ import * as pages from './views/pages.js';
 import * as admin from './views/admin.js';
 import { LANDING, bySlug } from './seo.js';
 import { DEFAULT_CONTENT, reqState } from './views/ui.js';
+import * as community from './community/store.js';
+import { youtubeId } from './community/moderate.js';
+import { communityPage, topicPage, communityAdmin } from './views/community.js';
 
 const CSP = [
   "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'none'", "form-action 'self'",
-  "script-src 'self' https://www.googletagmanager.com https://connect.facebook.net",
+  "script-src 'self' https://www.googletagmanager.com https://connect.facebook.net https://challenges.cloudflare.com",
+  // Community ride videos (YouTube's no-cookie player) and the "are you human" check.
+  "frame-src https://www.youtube-nocookie.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'", "font-src 'self'",
   "img-src 'self' data: https:",
   "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com https://www.facebook.com https://connect.facebook.net https://*.doubleclick.net https://www.google.com",
@@ -58,7 +63,7 @@ async function readBody(request) {
 const query = (url) => { const o = {}; for (const [k, v] of url.searchParams) if (!(k in o)) o[k] = v; return o; };
 
 // ---------------- public
-async function publicRoutes(request, url, ctx) {
+async function publicRoutes(request, url, ctx, env = {}) {
   const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : '/';
   const method = request.method;
   const get = method === 'GET' || method === 'HEAD';
@@ -93,12 +98,19 @@ async function publicRoutes(request, url, ctx) {
   if (get && path === '/robots.txt') return text(request, `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /lead\nDisallow: /contact?\n\nSitemap: ${config.siteUrl}/sitemap.xml\n`);
   if (get && path === '/sitemap.xml') {
     const day = now().slice(0, 10);
-    const urls = [['/', day, '1.0'], ['/inventory', day, '0.9'], ...LANDING.map((l) => ['/' + l.slug, day, '0.8']), ['/about', null, '0.6'], ['/financing', null, '0.5'], ['/contact', null, '0.5'],
+    const urls = [['/', day, '1.0'], ['/inventory', day, '0.9'], ...LANDING.map((l) => ['/' + l.slug, day, '0.8']), ['/community', day, '0.6'], ['/about', null, '0.6'], ['/financing', null, '0.5'], ['/contact', null, '0.5'],
+      ...(await community.liveTopicIds()).map((t) => [`/community/t/${t.id}`, (t.last_activity || '').slice(0, 10), '0.4']),
       ...(await inv.publicUrls()).map((u) => [`/inventory/${u.slug}`, (u.last_changed || u.last_verified || '').slice(0, 10), '0.7'])];
     return text(request, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(([p, lm, pr]) => `<url><loc>${config.siteUrl}${p}</loc>${lm ? `<lastmod>${lm}</lastmod>` : ''}<priority>${pr}</priority></url>`).join('\n')}\n</urlset>\n`, 'application/xml; charset=utf-8');
   }
   if (get && path === '/favicon.ico') return redirect(request, '/favicon.svg', 301);
   if (get && path === '/healthz') { const h = syncHealth(); return json(request, { ok: true, lastSuccessfulSync: h.lastSuccess, stale: h.stale, paused: h.paused }); }
+
+  // ---- community: ride videos and an open discussion board (no accounts; every post is screened)
+  if (path === '/community' || path.startsWith('/community/')) {
+    const res = await communityRoutes(request, url, path, env, ctx);
+    if (res) return res;
+  }
 
   // ---- first-party, cookie-less counts
   if (method === 'POST' && path === '/api/event') {
@@ -140,8 +152,102 @@ async function publicRoutes(request, url, ctx) {
   return null;
 }
 
+// ---------------- community
+const C_COOKIE = 'rwb_c';
+const cookieOut = (name, value, days) => `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${days * 86400}; SameSite=Lax${config.isProd ? '; Secure' : ''}${name === C_COOKIE ? '; HttpOnly' : ''}`;
+
+async function humanCheck(request, b) {
+  if (!config.turnstile.secret) return true; // not set up: the other checks still apply
+  try {
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: new URLSearchParams({ secret: config.turnstile.secret, response: String(b['cf-turnstile-response'] || ''), remoteip: sec.clientIp(request) }), signal: AbortSignal.timeout(8000) });
+    return !!(await r.json()).success;
+  } catch { return false; }
+}
+
+async function communityRoutes(request, url, path, env, ctx) {
+  const method = request.method;
+  const cookies = sec.parseCookies(request);
+  const name = String(cookies.rwb_name || '').slice(0, 30);
+  const staff = !!(await sec.getSession(request));
+  const flash = (url.searchParams.get('m') || '').slice(0, 20);
+  const noStore = { 'Cache-Control': 'no-store' };
+
+  if (method === 'GET' || method === 'HEAD') {
+    if (path === '/community') {
+      const page = parseInt(url.searchParams.get('page'), 10) || 1;
+      return html(request, communityPage({ videos: await community.listVideos(), list: await community.listTopics(page), name, flash, staff }));
+    }
+    const m = path.match(/^\/community\/t\/(\d{1,9})$/);
+    if (m) {
+      const t = await community.getTopic(Number(m[1]));
+      return t ? html(request, topicPage({ ...t, name, flash, staff })) : html(request, pages.notFound(), 404);
+    }
+    return null;
+  }
+  if (method !== 'POST') return null;
+  const b = await readBody(request);
+  const ip = sec.clientIp(request);
+  const ipHash = await sec.hashIp(ip);
+  // Bots: a quiet "thanks" and nothing saved.
+  const quiet = () => redirect(request, '/community?m=posted#talk', 303, noStore);
+  if (b.company) return quiet();
+  const tokenProblem = await sec.checkFormToken(b._t);
+
+  if (path === '/community/report') {
+    if (tokenProblem === 'expired' || (await overLimit('creport', ipHash, 10, 3600))) return redirect(request, '/community#talk', 303, noStore);
+    const id = parseInt(b.id, 10);
+    const token = cookies[C_COOKIE] || community.newToken();
+    if (id) await community.reportPost(id, await community.visitorKey(token));
+    const back = (request.headers.get('Referer') || '').startsWith(url.origin + '/community') ? new URL(request.headers.get('Referer')).pathname : '/community';
+    return redirect(request, `${back}?m=reported`, 303, { ...noStore, 'Set-Cookie': cookieOut(C_COOKIE, token, 365) });
+  }
+
+  if (path === '/community/video') {
+    const v = { name: String(b.name || '').trim().slice(0, 60), url: String(b.url || '').trim().slice(0, 300), contact: String(b.contact || '').trim().slice(0, 120), note: String(b.note || '').trim().slice(0, 200) };
+    const errors = {};
+    if (v.name.length < 2) errors.name = 'Please add your name.';
+    if (!/^https:\/\/[^\s<>"']{6,}$/.test(v.url)) errors.url = 'Paste the full link, starting with https://';
+    if (v.contact.length < 5) errors.contact = 'Add a phone number or email so Byron can reach you.';
+    if (b.consent !== 'yes' && b.consent !== 'on') errors.consent = 'Please tick the box.';
+    if (tokenProblem) errors.url = errors.url || 'Please take a moment, then send again.';
+    if (!Object.keys(errors).length && !(await humanCheck(request, b))) errors.url = 'The “are you human” check didn’t pass. Please try again.';
+    if (!Object.keys(errors).length && (await overLimit('cvideo', ipHash, 4, 3600))) errors.url = 'That’s a lot of videos at once. Try again in a bit.';
+    if (Object.keys(errors).length) return html(request, communityPage({ videos: await community.listVideos(), list: await community.listTopics(1), name, staff, sendErrors: errors, sendValues: v }), 422);
+    await community.addSubmission(v);
+    return redirect(request, '/community?m=sent#send', 303, noStore);
+  }
+
+  if (path === '/community/post') {
+    const parentId = parseInt(b.parent, 10) || null;
+    const again = async (errors, status = 422) => {
+      const values = { author: b.author, title: b.title, body: b.body };
+      if (parentId) {
+        const parent = await q.get('SELECT topic_id FROM community_posts WHERE id=?', [parentId]);
+        const t = parent ? await community.getTopic(parent.topic_id) : null;
+        if (t) return html(request, topicPage({ ...t, name, staff, errors, values }), status);
+      }
+      return html(request, communityPage({ videos: await community.listVideos(), list: await community.listTopics(1), name, staff, errors, values }), status);
+    };
+    if (tokenProblem === 'expired') return again({ form: 'This page sat open a while. Please try posting again.' }, 400);
+    if (tokenProblem === 'too-fast') return again({ form: 'Give it a second, then post again.' }, 400);
+    if (!staff) {
+      if (!(await humanCheck(request, b))) return again({ form: 'The “are you human” check didn’t pass. Please try again.' }, 400);
+      if (await overLimit('cpost', ipHash, 5, 600) || await overLimit('cpostday', ipHash, 30, 86400)) return again({ form: 'You’re posting a lot. Take a breather and try again in a few minutes.' }, 429);
+    }
+    const token = cookies[C_COOKIE] || community.newToken();
+    const r = await community.createPost({ author: b.author, title: b.title, body: b.body, parentId, visitor: await community.visitorKey(token), ipk: await community.ipKey(ip), staff, ai: env.AI || null });
+    if (!r.ok) return again({ [r.field || 'form']: r.message });
+    const m = r.status === 'live' ? 'posted' : /link/i.test(r.held) ? 'heldlink' : /first/i.test(r.held) ? 'held' : 'heldreview';
+    const res = redirect(request, r.status === 'live' ? `/community/t/${r.topicId}?m=posted#p${r.id}` : `${parentId ? `/community/t/${r.topicId}` : '/community'}?m=${m}`, 303, noStore);
+    res.headers.append('Set-Cookie', cookieOut(C_COOKIE, token, 365));
+    if (!staff && b.author) res.headers.append('Set-Cookie', cookieOut('rwb_name', String(b.author).trim().slice(0, 30), 365));
+    return res;
+  }
+  return null;
+}
+
 // ---------------- admin
-async function adminRoutes(request, url) {
+async function adminRoutes(request, url, adminEnv = {}) {
   const path = url.pathname.replace(/\/+$/, '') || '/admin';
   const method = request.method;
   const noStore = { 'Cache-Control': 'no-store' };
@@ -171,6 +277,7 @@ async function adminRoutes(request, url) {
     if (path === '/admin/traffic') return page(await admin.traffic(csrf));
     if (path === '/admin/content') return page(admin.contentAdmin(csrf, flash));
     if (path === '/admin/logs') return page(await admin.logs(csrf, query(url)));
+    if (path === '/admin/community') return page(communityAdmin(csrf, { ...(await community.adminData()), ai: !!adminEnv.AI, turnstile: !!config.turnstile.secret }, flash, admin.shell));
     if (path === '/admin/leads.csv') {
       const rows = await q.all('SELECT id,created_at,intent,name,phone,email,vehicle,stock_number,message,preferred_time,source,attribution,crm_status FROM leads ORDER BY id DESC LIMIT 5000');
       // Prefix cells a spreadsheet would run as a formula.
@@ -192,6 +299,23 @@ async function adminRoutes(request, url) {
     const r = await runSync({ trigger: 'manual' });
     return to('/admin', `Sync ${r.status}: ${r.message}`.slice(0, 190));
   }
+  // ---- community moderation
+  let cm = path.match(/^\/admin\/community\/post\/(\d+)$/);
+  if (cm) {
+    if (['approve', 'remove', 'lock', 'unlock', 'block'].includes(b.action)) await community.moderate(Number(cm[1]), b.action);
+    return to('/admin/community', { approve: 'Approved: it is on the page.', remove: 'Removed.', lock: 'Topic closed to new replies.', unlock: 'Topic reopened.', block: 'Removed, and that person can no longer post.' }[b.action] || '');
+  }
+  if (path === '/admin/community/video') {
+    const id = youtubeId(b.url);
+    if (!id) return to('/admin/community', 'That doesn’t look like a YouTube link. Paste the link from YouTube’s Share button.');
+    await community.addVideo({ youtubeId: id, title: b.title, credit: b.credit });
+    return to('/admin/community', 'Video added.');
+  }
+  cm = path.match(/^\/admin\/community\/video\/(\d+)$/);
+  if (cm) { await community.removeVideo(Number(cm[1])); return to('/admin/community', 'Video removed.'); }
+  cm = path.match(/^\/admin\/community\/submission\/(\d+)$/);
+  if (cm) { await q.run("UPDATE community_submissions SET status=CASE WHEN status='done' THEN 'new' ELSE 'done' END WHERE id=?", [Number(cm[1])]); return to('/admin/community'); }
+
   let m = path.match(/^\/admin\/unit\/([0-9a-f-]{36})$/);
   if (m) {
     const g = m[1];
@@ -244,7 +368,7 @@ async function handle(request, env, ctx) {
   }
   await useDb(env.DB);
   reqState.formToken = await sec.formToken();
-  const res = url.pathname === '/admin' || url.pathname.startsWith('/admin/') ? await adminRoutes(request, url) : await publicRoutes(request, url, ctx);
+  const res = url.pathname === '/admin' || url.pathname.startsWith('/admin/') ? await adminRoutes(request, url, env) : await publicRoutes(request, url, ctx, env);
   return res || html(request, pages.notFound(), 404);
 }
 
@@ -267,6 +391,7 @@ export default {
     await useDb(env.DB);
     try { const r = await runSync({ trigger: 'schedule' }); console.log(`[sync] ${r.status}: ${r.message}`); } catch (e) { await logError('sync-scheduler', e); }
     try { await leads.runOutbox(); } catch (e) { await logError('outbox', e); }
+    try { await community.settlePosts(); } catch (e) { await logError('community', e); }
     // Specs and features for models that don't have them yet (a few dealer pages per run).
     try { const d = await runDetails({ max: 4 }); if (d.status !== 'ok' || d.tried) console.log(`[details] ${d.status}: ${d.message || `${d.done}/${d.tried} models`}`); } catch (e) { await logError('details', e); }
   },

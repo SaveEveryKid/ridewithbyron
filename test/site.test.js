@@ -427,3 +427,177 @@ test('the dealer page is not re-read while its search key is still good; a refus
   await sync(src(60));
   assert.equal(calls.page, 3, 'a key about to expire is replaced');
 });
+
+// ---------------- community page
+import * as community from '../src/community/store.js';
+import { foulWord, screenPost, hideContacts, youtubeId, aiHoldReason } from '../src/community/moderate.js';
+
+test('foul-language filter: catches disguises, leaves ordinary riding talk alone', () => {
+  for (const t of ['what the fuck', 'F U C K this', 'f.u.c.k', 'sh1t trail', 'shiiiit', 'b!tch', 'a$$hole', 'you are an ass', 'damn that was fun', 'f*ck', 'phuck', 'dumb@ss', 'kiss my a s s', 'pissed off', 'wtf man', 'fück', 'f_u_c_k', 'asses']) assert.ok(foulWord(t), `should refuse: ${t}`);
+  for (const t of ['First class hit on the Ranger', 'Great pass through the grass', 'I assume the Bass Pro trail is open', 'Check the cockpit on that RZR', 'Dickson County trails', 'assess the damage', 'This hits different', 'Cumberland Plateau ride Saturday', 'spicy wings after', 'S O S if you get stuck', 'R Z R 1000', 'meet @ 5 at the gas station', 'a s a p', 'Polaris RZR-200', 'F-150 pulls it fine', 'wash it off', '2 seats, 4 wheels, 82 hp']) assert.equal(foulWord(t), null, `should allow: ${t}`);
+  assert.equal(hideContacts('call 256-555-2964 or me@x.com, 2026 Ranger 1000'), 'call [phone hidden] or [email hidden], 2026 Ranger 1000');
+  assert.equal(screenPost({ author: 'Byron', body: 'hello there', isTopic: false }).ok, false, 'nobody can pose as Byron');
+  assert.equal(screenPost({ author: 'Tim', title: 'Trails', body: 'see http://spam.example', isTopic: true }).hold, 'Contains a link');
+  assert.equal(screenPost({ author: 'sh1thead', body: 'hello there', isTopic: false }).ok, false, 'names are filtered too');
+  assert.equal(youtubeId('https://youtu.be/dQw4w9WgXcQ?si=x'), 'dQw4w9WgXcQ');
+  assert.equal(youtubeId('https://evil.example/watch?v=dQw4w9WgXcQ'), null);
+});
+
+test('AI safety check: holds what it flags, never blocks when it is missing or broken', async () => {
+  assert.equal(await aiHoldReason(null, 'hi'), null);
+  assert.equal(await aiHoldReason({ run: async () => ({ response: 'safe' }) }, 'hi'), null);
+  assert.match(await aiHoldReason({ run: async () => ({ response: 'unsafe\nS10' }) }, 'x'), /AI flagged/);
+  assert.match(await aiHoldReason({ run: async () => ({ response: { safe: false, categories: ['S10'] } }) }, 'x'), /S10/);
+  assert.equal(await aiHoldReason({ run: async () => { throw new Error('down'); } }, 'x'), null);
+});
+
+test('community: the whole life of a post, with no account', async () => {
+  const tok = async () => sec.sign({ f: 1, t: Date.now() - 5000 }, 3600, 'form');
+  let ipn = 20;
+  const post = async (fields, cookie = '', ip = `198.51.100.${++ipn}`) => call('/community/post', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': ip, ...(cookie ? { Cookie: cookie } : {}) }, body: new URLSearchParams({ _t: await tok(), ...fields }) });
+  const cookieOf = (res) => (res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get('Set-Cookie')]).map((c) => c.split(';')[0]).join('; ');
+  const page = async (p = '/community') => (await call(p)).text();
+
+  // empty page: placeholder video invitation, no topics, rules shown
+  let h = await page();
+  assert.match(h, /Your ride could be first/);
+  assert.match(h, /No topics yet/);
+  assert.match(h, /House rules/);
+  assert.match(h, /href="\/community"[^>]*>Community</, 'in the site menu');
+
+  // foul language is refused and nothing is saved
+  let r = await post({ author: 'Mud Dog', title: 'Best trails', body: 'This sh1t is awesome' });
+  assert.equal(r.status, 422);
+  assert.match(await r.text(), /Keep it clean/);
+  assert.equal((await q.get('SELECT COUNT(*) n FROM community_posts')).n, 0);
+  // bots (honeypot) get a quiet thank-you and nothing is saved; a missing form token is refused
+  assert.equal((await post({ author: 'Bot', title: 'Buy now', body: 'cheap stuff', company: 'x' })).status, 303);
+  assert.equal((await call('/community/post', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ author: 'A B', title: 'Hello there', body: 'hi all' }) })).status, 400);
+  assert.equal((await q.get('SELECT COUNT(*) n FROM community_posts')).n, 0);
+
+  // a person's first post waits for Byron
+  r = await post({ author: 'Mud Dog', title: 'Favorite spots around the Shoals', body: 'Where do y’all ride? Text me at 256-555-2964 <script>alert(1)</script>' });
+  assert.equal(r.status, 303);
+  assert.match(r.headers.get('Location'), /m=held/);
+  const mudDog = cookieOf(r);
+  assert.match(mudDog, /rwb_c=/);
+  assert.doesNotMatch(await page(), /Favorite spots around the Shoals/, 'held posts are not public');
+  const held = await q.get("SELECT * FROM community_posts WHERE status='held'");
+  assert.equal(held.hold_reason, 'First post from this person');
+  assert.match(held.body, /\[phone hidden\]/);
+  await community.moderate(held.id, 'approve');
+  h = await page();
+  assert.match(h, /Favorite spots around the Shoals/);
+  h = await page(`/community/t/${held.id}`);
+  assert.ok(h.includes('&lt;script&gt;alert(1)') && !h.includes('<script>alert(1)'), 'visitor text is escaped');
+  assert.match(h, /DiscussionForumPosting/);
+
+  // once approved, that person's posts go straight up; a different person's reply is held
+  r = await post({ author: 'Mud Dog', parent: String(held.id), body: 'Bankhead is my favorite so far.' }, mudDog);
+  assert.match(r.headers.get('Location'), new RegExp(`/community/t/${held.id}\\?m=posted`));
+  const reply1 = (await q.get("SELECT id FROM community_posts WHERE body LIKE 'Bankhead%'")).id;
+  r = await post({ author: 'Trail Rat', parent: String(reply1), body: 'Stony Lonesome is worth the drive too.' });
+  assert.match(r.headers.get('Location'), /m=held/);
+  const rat = cookieOf(r);
+  const ratPost = await q.get("SELECT id FROM community_posts WHERE author='Trail Rat'");
+  await community.moderate(ratPost.id, 'approve');
+  h = await page(`/community/t/${held.id}`);
+  assert.ok(h.indexOf('Bankhead') < h.indexOf('Stony Lonesome'));
+  assert.match(h, /class="c-children"/, 'replies nest under what they answer');
+  assert.match(await page(), /2 replies/);
+
+  // links wait for Byron even from a known poster; the same words twice are refused
+  r = await post({ author: 'Mud Dog', parent: String(held.id), body: 'Map is at trailmaps.com/bankhead' }, mudDog);
+  assert.match(r.headers.get('Location'), /m=heldlink/);
+  r = await post({ author: 'Mud Dog', parent: String(held.id), body: 'Map is at trailmaps.com/bankhead' }, mudDog);
+  assert.equal(r.status, 422);
+
+  // the AI check holds a hostile post that has no banned words
+  const realAI = ENV.AI;
+  ENV.AI = { run: async (_m, input) => ({ response: /idiot/.test(input.messages[0].content) ? 'unsafe\nS10' : 'safe' }) };
+  r = await post({ author: 'Trail Rat', parent: String(held.id), body: 'Only an idiot rides there.' }, rat);
+  assert.match(r.headers.get('Location'), /m=heldreview/);
+  assert.match((await q.get("SELECT hold_reason FROM community_posts WHERE body LIKE 'Only an idiot%'")).hold_reason, /AI flagged/);
+  ENV.AI = realAI;
+
+  // three different people reporting a post hides it; one person reporting three times does not
+  const report = async (id, cookie, ip) => call('/community/report', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': ip, ...(cookie ? { Cookie: cookie } : {}) }, body: new URLSearchParams({ _t: await tok(), id: String(id) }) });
+  const one = cookieOf(await report(ratPost.id, '', '203.0.113.1'));
+  await report(ratPost.id, one, '203.0.113.1'); await report(ratPost.id, one, '203.0.113.1');
+  assert.equal((await q.get('SELECT status FROM community_posts WHERE id=?', [ratPost.id])).status, 'live');
+  await report(ratPost.id, '', '203.0.113.2'); await report(ratPost.id, '', '203.0.113.3');
+  assert.equal((await q.get('SELECT status, hold_reason FROM community_posts WHERE id=?', [ratPost.id])).status, 'held');
+  assert.doesNotMatch(await page(`/community/t/${held.id}`), /Stony Lonesome/);
+
+  // Byron: closes a topic, blocks a poster (their posts come down and they can't post again)
+  await community.moderate(held.id, 'lock');
+  r = await post({ author: 'Mud Dog', parent: String(held.id), body: 'One more thing about Bankhead trails.' }, mudDog);
+  assert.match(await r.text(), /closed to new replies/);
+  await community.moderate(held.id, 'unlock');
+  await community.moderate(ratPost.id, 'block');
+  r = await post({ author: 'Trail Rat', parent: String(held.id), body: 'I am back again friends.' }, rat, '198.51.100.250');
+  assert.match(await r.text(), /turned off for you/);
+  assert.equal((await q.get("SELECT COUNT(*) n FROM community_posts WHERE author='Trail Rat' AND status='live'")).n, 0);
+
+  // posting too fast is slowed down
+  let last;
+  for (let i = 0; i < 7; i++) last = await post({ author: 'Speedy', title: `Topic number ${i} here`, body: `Message number ${i} for the board` }, '', '198.51.100.99');
+  assert.equal(last.status, 429);
+});
+
+test('community: Byron posts with a badge; videos; sent-in videos; admin tab', async () => {
+  const login = await call('/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '203.0.113.77' }, body: new URLSearchParams({ password: 'correct horse battery staple' }) });
+  const cookie = login.headers.get('Set-Cookie').split(';')[0];
+  const tok = await sec.sign({ f: 1, t: Date.now() - 5000 }, 3600, 'form');
+  let r = await call('/community/post', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie }, body: new URLSearchParams({ _t: tok, title: 'Welcome, riders', body: 'Glad you are here.' }) });
+  assert.match(r.headers.get('Location'), /m=posted/);
+  const mine = await q.get("SELECT * FROM community_posts WHERE title='Welcome, riders'");
+  assert.deepEqual([mine.author, mine.staff, mine.status], ['Byron Green', 1, 'live']);
+  assert.match(await (await call(`/community/t/${mine.id}`)).text(), /c-staff/);
+
+  const adminPage = await (await call('/admin/community', { headers: { Cookie: cookie } })).text();
+  const csrf = adminPage.match(/name="_csrf" value="([^"]+)"/)[1];
+  const apost = (p, b) => call(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: csrf, ...b }) });
+  assert.equal((await call('/admin/community')).status, 303, 'admin tab needs sign-in');
+  assert.equal((await apost('/admin/community/video', { url: 'not a link' })).status, 303);
+  assert.equal((await q.get('SELECT COUNT(*) n FROM community_videos')).n, 0);
+  await apost('/admin/community/video', { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'Mud run <b>', credit: 'Pat' });
+  let h = await (await call('/community')).text();
+  assert.match(h, /youtube-nocookie\.com\/embed\/dQw4w9WgXcQ/);
+  assert.ok(h.includes('Mud run &lt;b&gt;') && !h.includes('Your ride could be first'));
+  assert.match((await call('/community')).headers.get('Content-Security-Policy'), /frame-src https:\/\/www\.youtube-nocookie\.com/);
+  const vid = (await q.get('SELECT id FROM community_videos')).id;
+  await apost(`/admin/community/video/${vid}`, {});
+  assert.equal((await q.get('SELECT COUNT(*) n FROM community_videos')).n, 0);
+
+  // a rider sends in a video: needs a real link, a contact and the permission box
+  const send = (b) => call('/community/video', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '198.51.100.200' }, body: new URLSearchParams({ _t: tok, ...b }) });
+  assert.equal((await send({ name: 'Pat', url: 'javascript:alert(1)', contact: '256-555-2964', consent: 'yes' })).status, 422);
+  assert.equal((await send({ name: 'Pat', url: 'https://youtu.be/dQw4w9WgXcQ', contact: '256-555-2964' })).status, 422, 'permission box required');
+  r = await send({ name: 'Pat', url: 'https://youtu.be/dQw4w9WgXcQ', contact: '256-555-2964', note: 'Bankhead', consent: 'yes' });
+  assert.match(r.headers.get('Location'), /m=sent/);
+  h = await (await call('/admin/community', { headers: { Cookie: cookie } })).text();
+  assert.match(h, /https:\/\/youtu\.be\/dQw4w9WgXcQ/);
+  assert.doesNotMatch(await (await call('/community')).text(), /256-555-2964/, 'a sender’s contact is never public');
+
+  // admin actions through the page: remove a topic
+  await apost(`/admin/community/post/${mine.id}`, { action: 'remove' });
+  assert.equal((await call(`/community/t/${mine.id}`)).status, 404);
+  assert.match(await (await call('/sitemap.xml')).text(), /\/community</);
+});
+
+test('community: Byron gets one text for things that need him, not a flood', async () => {
+  const realFetch = globalThis.fetch;
+  const sent = [];
+  initConfig({ ...ENV, TORQUE_WEBHOOK_URL: 'https://torque.example/leads/intake', TORQUE_SIGNING_SECRET: 's' });
+  await setSetting('community_last_alert', null);
+  try {
+    const f = async (url, init) => { sent.push({ url, init }); return new Response('{"ok":true}', { status: 200 }); };
+    assert.equal(await community.alertByron('A post is waiting.', f), true);
+    assert.equal(await community.alertByron('Another one.', f), false, 'at most one text every 15 minutes');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].url, 'https://torque.example/leads/alert');
+    assert.match(sent[0].init.headers['X-RWB-Signature'], /^sha256=[0-9a-f]{64}$/);
+    assert.match(JSON.parse(sent[0].init.body).text, /^RideWithByron community: A post is waiting\./);
+  } finally { globalThis.fetch = realFetch; initConfig(ENV); }
+});

@@ -11,7 +11,7 @@ const pill = (text, kind = '') => `<span class="pill ${kind}">${esc(text)}</span
 const STATUS_KIND = { success: 'ok', partial: 'warn', failed: 'bad', blocked: 'bad', running: 'warn', skipped: '' };
 
 function shell(title, active, csrf, body) {
-  const tabs = [['/admin', 'Overview'], ['/admin/inventory', 'Inventory'], ['/admin/leads', 'Leads'], ['/admin/traffic', 'Traffic'], ['/admin/content', 'Content'], ['/admin/logs', 'Sync logs']];
+  const tabs = [['/admin', 'Overview'], ['/admin/inventory', 'Inventory'], ['/admin/leads', 'Leads'], ['/admin/community', 'Community'], ['/admin/traffic', 'Traffic'], ['/admin/content', 'Content'], ['/admin/logs', 'Sync logs']];
   return layout({
     bare: true, noindex: true, title: `${title} · Admin · RideWithByron`, path: '/admin',
     body: `<div class="wrap adm"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><a href="/" style="width:210px;display:block">${logo('a')}</a>
@@ -165,4 +165,4 @@ async function logs(csrf, q) {
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Time</th><th>Level</th><th>Unit</th><th>Message</th></tr></thead><tbody>${rows.map((r) => `<tr><td style="white-space:nowrap">${esc(dt(r.at))}</td><td>${pill(r.level, r.level === 'error' ? 'bad' : r.level === 'warn' ? 'warn' : '')}</td><td class="small muted">${esc((r.guid || '').slice(0, 8))}</td><td>${esc(r.message)}</td></tr>`).join('') || '<tr><td colspan="4">No log entries.</td></tr>'}</tbody></table></div>`);
 }
 
-export { login, overview, inventoryAdmin, leadsAdmin, traffic, contentAdmin, logs };
+export { shell, login, overview, inventoryAdmin, leadsAdmin, traffic, contentAdmin, logs };

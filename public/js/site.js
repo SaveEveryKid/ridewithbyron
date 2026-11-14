@@ -141,6 +141,19 @@
     dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
   }
 
+  // ---------- community: load the "are you human" check for a folded form when it is opened
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (!d || !d.open || !d.querySelectorAll) return;
+    var tries = 0;
+    (function render() {
+      var slots = $$('[data-turnstile]', d).filter(function (s) { return !s.getAttribute('data-done'); });
+      if (!slots.length) return;
+      if (!window.turnstile) { if (++tries < 40) setTimeout(render, 250); return; }
+      slots.forEach(function (s) { s.setAttribute('data-done', '1'); window.turnstile.render(s, { sitekey: s.getAttribute('data-turnstile'), theme: 'dark', size: 'flexible' }); });
+    })();
+  }, true);
+
   // ---------- gallery
   $$('[data-gallery]').forEach(function (g) {
     var track = $('[data-track]', g), imgs = $$('img', track), idx = $('[data-idx]', g), thumbs = $$('[data-go]', g), cur = 0;

@@ -12,7 +12,7 @@ const money = (n) => (n == null ? null : '$' + Number(n).toLocaleString('en-US')
 const jsonLd = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 
 // Bump when public/css or public/js change, so browsers fetch the new files.
-const ver = '3';
+const ver = '5';
 
 const DEFAULT_CONTENT = {
   byronPhone: '',       // Byron's direct line, e.g. 256-555-0123. Until set, call/text buttons open the request form.
@@ -145,7 +145,7 @@ function layout({ title, description, canonical, body, path: reqPath = '/', noin
   const c = content();
   const a = config.analytics;
   const hasTags = a.ga4 || a.googleAds || a.metaPixel;
-  const nav = [['/inventory', 'Inventory'], ['/polaris-ranger-for-sale-florence-al', 'Rangers'], ['/side-by-sides-for-sale-north-alabama', 'Side-by-Sides'], ['/about', 'About Byron'], ['/financing', 'Financing'], ['/contact', 'Contact']];
+  const nav = [['/inventory', 'Inventory'], ['/polaris-ranger-for-sale-florence-al', 'Rangers'], ['/side-by-sides-for-sale-north-alabama', 'Side-by-Sides'], ['/community', 'Community'], ['/about', 'About Byron'], ['/financing', 'Financing'], ['/contact', 'Contact']];
   const cur = (href) => (reqPath === href ? ' aria-current="page"' : '');
   const canon = canonical ? config.siteUrl + canonical : null;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -174,7 +174,7 @@ ${bare ? '' : `<footer class="foot"><div class="wrap">
 <div class="foot-grid">
 <div><div style="max-width:260px">${logo('f')}</div><p style="margin-top:12px">Find Your Ride. Fuel Your Adventure.<br>Byron Green — Sales, Shoals Outdoor Sports, Florence, Alabama.</p></div>
 <div><h4>Shop</h4><ul><li><a href="/inventory">All Florence inventory</a></li><li><a href="/inventory?condition=New">New</a></li><li><a href="/inventory?condition=Used">Pre-owned</a></li><li><a href="/polaris-dealer-florence-al">Polaris in Florence</a></li><li><a href="/atvs-for-sale-florence-alabama">ATVs</a></li><li><a href="/polaris-rzr-for-sale-huntsville-al">Polaris RZR</a></li></ul></div>
-<div><h4>Byron</h4><ul><li><a href="/about">About Byron</a></li><li><a href="/financing">Financing questions</a></li><li><a href="/contact?intent=visit">Schedule a visit</a></li><li><a href="/contact">Contact</a></li>${c.byronPhone ? `<li><a href="${telHref(c.byronPhone)}" data-track="call">${esc(fmtPhone(c.byronPhone))}</a></li>` : ''}</ul></div>
+<div><h4>Byron</h4><ul><li><a href="/about">About Byron</a></li><li><a href="/community">Rider community</a></li><li><a href="/financing">Financing questions</a></li><li><a href="/contact?intent=visit">Schedule a visit</a></li><li><a href="/contact">Contact</a></li>${c.byronPhone ? `<li><a href="${telHref(c.byronPhone)}" data-track="call">${esc(fmtPhone(c.byronPhone))}</a></li>` : ''}</ul></div>
 <div><h4>Visit</h4><ul><li>${esc(config.dealership.locationName)}</li><li>${esc(config.dealership.street)}<br>${esc(config.dealership.city)}, ${config.dealership.region} ${config.dealership.zip}</li><li><a href="${config.dealership.mapsUrl}" rel="noopener" target="_blank">Get directions</a></li><li><a href="/privacy">Privacy</a> · <a href="/about-this-site">About this site</a></li></ul></div>
 </div>
 <p class="disclose">RideWithByron.com is the personal sales website of Byron Green, a sales representative at Shoals Outdoor Sports in Florence, Alabama. It is not a dealership. All vehicles shown are owned and offered for sale by Shoals Outdoor Sports, and every purchase, price, trade, financing arrangement and delivery is completed through Shoals Outdoor Sports. Inventory, prices and availability are read from the dealership’s published Florence listings and re-verified regularly, but units sell quickly and errors can occur — please confirm details with Byron before you travel. Prices exclude tax, title and registration unless stated. Polaris®, RANGER®, RZR®, GENERAL®, Sportsman® and XPEDITION® are trademarks of Polaris Industries Inc.; other brand names belong to their owners.</p>
