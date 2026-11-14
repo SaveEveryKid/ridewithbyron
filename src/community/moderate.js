@@ -93,7 +93,7 @@ export function screenPost({ author, title, body, isTopic }) {
   }
   if (hasLink(name) || (head && hasLink(head))) return { ok: false, field: 'title', message: 'No links in names or titles, please.' };
   return {
-    ok: true, author: hideContacts(name), title: head ? hideContacts(head) : null, body: hideContacts(text),
+    ok: true, author: name, title: head, body: text, // contact details are left as written: it's the poster's choice
     hold: hasLink(text) ? 'Contains a link' : null,
   };
 }

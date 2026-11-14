@@ -484,7 +484,7 @@ test('community: the whole life of a post, with no account', async () => {
   assert.doesNotMatch(await page(), /Favorite spots around the Shoals/, 'held posts are not public');
   const held = await q.get("SELECT * FROM community_posts WHERE status='held'");
   assert.equal(held.hold_reason, 'First post from this person');
-  assert.match(held.body, /\[phone hidden\]/);
+  assert.match(held.body, /256-555-2964/, 'contact details are left as the poster wrote them');
   await community.moderate(held.id, 'approve');
   h = await page();
   assert.match(h, /Favorite spots around the Shoals/);
@@ -574,11 +574,11 @@ test('community: Byron posts with a badge; videos; sent-in videos; admin tab', a
   const send = (b) => call('/community/video', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '198.51.100.200' }, body: new URLSearchParams({ _t: tok, ...b }) });
   assert.equal((await send({ name: 'Pat', url: 'javascript:alert(1)', contact: '256-555-2964', consent: 'yes' })).status, 422);
   assert.equal((await send({ name: 'Pat', url: 'https://youtu.be/dQw4w9WgXcQ', contact: '256-555-2964' })).status, 422, 'permission box required');
-  r = await send({ name: 'Pat', url: 'https://youtu.be/dQw4w9WgXcQ', contact: '256-555-2964', note: 'Bankhead', consent: 'yes' });
+  r = await send({ name: 'Pat', url: 'https://youtu.be/dQw4w9WgXcQ', contact: '256-555-7777', note: 'Bankhead', consent: 'yes' });
   assert.match(r.headers.get('Location'), /m=sent/);
   h = await (await call('/admin/community', { headers: { Cookie: cookie } })).text();
   assert.match(h, /https:\/\/youtu\.be\/dQw4w9WgXcQ/);
-  assert.doesNotMatch(await (await call('/community')).text(), /256-555-2964/, 'a sender’s contact is never public');
+  assert.doesNotMatch(await (await call('/community')).text(), /256-555-7777/, 'a sender’s contact is never public');
 
   // admin actions through the page: remove a topic
   await apost(`/admin/community/post/${mine.id}`, { action: 'remove' });

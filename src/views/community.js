@@ -9,7 +9,6 @@ const STYLE = `<style>${COMMUNITY_CSS}</style>`;
 const RULES = [
   'Be friendly. This is for riders helping riders.',
   'Keep it clean: no foul language, no personal attacks.',
-  'No phone numbers, emails or home addresses in posts. Swap details in person or by private message.',
   'Meeting up to ride? Meet in a public place, ride within your limits, wear your gear, and bring a buddy.',
   'No selling or advertising. For a unit, ask Byron.',
   'You must be 13 or older to post.',
@@ -50,6 +49,8 @@ function videoGrid(videos) {
   return `<div class="c-videos">${videos.map((v) => `<figure class="c-video"><div class="c-frame"><iframe src="https://www.youtube-nocookie.com/embed/${esc(v.youtube_id)}?rel=0" title="${esc(v.title || 'Community ride video')}" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>${v.title || v.credit ? `<figcaption>${v.title ? `<b>${esc(v.title)}</b>` : ''}${v.credit ? `<span class="muted"> — ${esc(v.credit)}</span>` : ''}</figcaption>` : ''}</figure>`).join('')}</div>`;
 }
 
+const DISCLAIMER = '<div class="notice" role="note"><b>Not responsible for any personal info posted on this page. Be aware: this is PUBLIC.</b> Anything you post here, including a phone number, can be seen by anyone.</div>';
+
 function flashBox(flash) {
   const M = {
     posted: ['ok', 'Posted. Thanks for adding to the conversation.'],
@@ -69,6 +70,7 @@ export function communityPage({ videos, list, name = '', flash = '', errors = {}
   const body = `
 <div class="page-head"><div class="wrap"><span class="eyebrow">Riders around the Shoals</span><h1>Community</h1><p class="lede">Ride videos from folks around here, and a place to talk trails, machines and meeting up to ride.</p></div></div>
 <div class="wrap">
+${DISCLAIMER}
 ${flashBox(flash)}
 <section class="sec" style="padding-bottom:10px"><div class="sec-head"><div><h2>Ride <span>videos</span></h2><div class="slash"></div></div>${videos.length ? '<a href="#send">Send us yours →</a>' : ''}</div>
 ${videoGrid(videos)}</section>
@@ -119,6 +121,7 @@ export function topicPage({ topic, replies, count, name = '', flash = '', errors
     interactionStatistic: { '@type': 'InteractionCounter', interactionType: 'https://schema.org/CommentAction', userInteractionCount: count },
   };
   const body = `<div class="wrap"><div class="crumbs" style="padding-top:16px"><a href="/">Home</a> / <a href="/community#talk">Community</a></div>
+${DISCLAIMER}
 ${flashBox(flash)}
 <article class="c-post c-root" id="p${topic.id}">
 <h1>${esc(topic.title)}</h1>
